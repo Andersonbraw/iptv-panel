@@ -1,0 +1,14 @@
+{
+  "dependencies": {
+    "axios": "^1.16.1",
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "hls.js": "^1.6.16",
+    "jsonwebtoken": "^9.0.3",
+    "m3u8-parser": "^7.2.0",
+    "multer": "^2.1.1",
+    "pg": "^8.21.0"
+  }
+}
