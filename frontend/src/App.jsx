@@ -23,6 +23,7 @@ export default function App() {
   const [favorites, setFavorites] = useState([])
   const [history, setHistory] = useState([])
   const [recommendations, setRecommendations] = useState([])
+  const [epgList, setEpgList] = useState([])
 
   const [search, setSearch] = useState('')
   const [m3uUrl, setM3uUrl] = useState('')
@@ -127,7 +128,35 @@ const [failoverTried, setFailoverTried] = useState([])
       console.log(err)
     }
   }
+  
+  async function loadEpg(channel) {
 
+  try {
+
+    if (!channel?.name) return
+
+    const cleanName = channel.name
+      .replace(/\(.*?\)/g, '')
+      .replace(/\[.*?\]/g, '')
+      .replace(/\bHD\b|\bFHD\b|\bSD\b|\b1080p\b|\b720p\b|\b480p\b/gi, '')
+      .trim()
+
+    const res = await axios.get(
+      `${API}/epg/${encodeURIComponent(cleanName)}`,
+      authHeaders
+    )
+
+    setEpgList(res.data || [])
+
+  } catch (err) {
+
+    console.log(err)
+    setEpgList([])
+
+  }
+
+} 
+  
 async function loadRecommendations(profileId) {
   try {
     const res = await axios.get(`${API}/recommendations/${profileId}`, authHeaders)
@@ -393,6 +422,7 @@ async function switchToNextStream() {
 }
   async function playChannel(channel) {
   setSelectedChannel(channel)
+  loadEpg(channel)
   setMiniPlayer(false)
   setPlayerError('')
   setFailoverTried([])
@@ -533,6 +563,8 @@ async function switchToNextStream() {
   }
 }, [selectedChannel])
 
+const currentEpg = epgList[0] || null
+const nextEpg = epgList[1] || null
   const groupedChannels = useMemo(() => {
     const filtered = channels.filter(channel =>
       channel.name?.toLowerCase().includes(search.toLowerCase())
@@ -780,10 +812,44 @@ async function switchToNextStream() {
                 <h2 style={styles.heroCat}>{selectedChannel.category}</h2>
 
                 <div style={styles.epgBox}>
-                  <strong style={{ color: '#38bdf8' }}>GUIA AO VIVO</strong>
-                  <h2>Programação premium</h2>
-                  <p>Próximo: transmissão especial</p>
-                </div>
+
+  <strong style={{ color: '#38bdf8' }}>
+    GUIA AO VIVO
+  </strong>
+
+  {currentEpg ? (
+    <>
+
+      <h2>
+        {currentEpg.title}
+      </h2>
+
+      <p>
+        {currentEpg.description || 'Programação ao vivo'}
+      </p>
+
+    </>
+  ) : (
+    <>
+
+      <h2>
+        Programação ao vivo
+      </h2>
+
+      <p>
+        EPG indisponível para este canal
+      </p>
+
+    </>
+  )}
+
+  {nextEpg && (
+    <p style={styles.nextEpg}>
+      Próximo: {nextEpg.title}
+    </p>
+  )}
+
+</div>
 
                 <div style={styles.heroButtons}>
                   <button style={styles.watchButton} onClick={() => videoRef.current?.play()}>
@@ -1007,7 +1073,14 @@ function ChannelRow({ title, channels, onPlay, onFavorite }) {
 
             <div style={styles.cardBody}>
               <h2 style={styles.cardTitle}>{channel.name}</h2>
-              <p style={styles.cardCategory}>{channel.category}</p>
+
+                                  <p style={styles.cardCategory}>{channel.category}</p>
+
+                                  {Number(channel.reserve_count || 0) > 0 && (
+                                       <p style={styles.reserveText}>
+                                            +{channel.reserve_count} stream(s) reserva
+                                       </p>
+                                   )}
 
               {typeof channel.progress !== 'undefined' && (
                 <>
@@ -1324,6 +1397,12 @@ const styles = {
   },
 
   epgBox: {
+  nextEpg: {
+          marginTop: 12,
+          color: '#38bdf8',
+          fontWeight: 'bold',
+          fontSize: 16
+      },
     background: '#0a1737',
     padding: 22,
     borderRadius: 20,
@@ -1484,6 +1563,13 @@ const styles = {
     color: '#38bdf8',
     marginTop: 0
   },
+
+  reserveText: {
+          color: '#22c55e',
+          fontSize: 13,
+          fontWeight: 'bold',
+          marginTop: 6
+      },
 
   favoriteMini: {
     width: '100%',

@@ -2,22 +2,26 @@ import express from 'express'
 import cors from 'cors'
 import jwt from 'jsonwebtoken'
 import pg from 'pg'
+import dotenv from 'dotenv'
+import { XMLParser } from 'fast-xml-parser'
+
+dotenv.config()
 
 const { Pool } = pg
 
 const app = express()
 const PORT = 3000
 const JWT_SECRET = 'iptv_panel_secret_2026'
+const EPG_URL = 'https://iptv-org.github.io/epg/guides/br/br.xml'
 
 app.use(cors())
 app.use(express.json({ limit: '50mb' }))
 
 const pool = new Pool({
-  user: 'postgres',
-  host: 'localhost',
-  database: 'iptv_panel',
-  password: '1234',
-  port: 5432
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
 })
 
 const DEFAULT_GITHUB_SOURCES = [
@@ -25,10 +29,7 @@ const DEFAULT_GITHUB_SOURCES = [
     name: 'IPTV Org Brasil',
     url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/br.m3u'
   },
-  {
-    name: 'IPTV Org América Latina',
-    url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/int.m3u'
-  }
+  
 ]
 
 async function initDb() {
@@ -523,30 +524,18 @@ async function saveChannels(channels) {
 
       const normalized = normalizeChannelName(channel.name || '')
 
-      const existing = await pool.query(
-        `
-        SELECT *
-        FROM channels
-        WHERE regexp_replace(
-          regexp_replace(
-            regexp_replace(
-              lower(unaccent(name)),
-              '\\m(hd|fhd|sd|4k|1080p|720p|480p)\\M',
-              '',
-              'g'
-            ),
-            '\\(.*?\\)',
-            '',
-            'g'
-          ),
-          '[^a-z0-9]',
-          '',
-          'g'
-        ) = $1
-        LIMIT 1
-        `,
-        [normalized]
-      )
+      const allChannels = await pool.query(`
+  SELECT *
+  FROM channels
+`)
+
+const existingChannel = allChannels.rows.find(item => {
+  return normalizeChannelName(item.name || '') === normalized
+})
+
+const existing = {
+  rows: existingChannel ? [existingChannel] : []
+}
 
       if (existing.rows.length > 0) {
         const mainChannel = existing.rows[0]
@@ -569,7 +558,6 @@ async function saveChannels(channels) {
             channel.url,
             channel.category || 'Fonte IPTV',
             detectQuality(channel.name || ''),
-            true
           ]
         )
 
@@ -856,14 +844,25 @@ app.get('/profiles', auth, async (req, res) => {
 
 app.get('/channels', auth, async (req, res) => {
   try {
+
     const limit = Math.min(Number(req.query.limit || 800), 1000)
     const offset = Number(req.query.offset || 0)
     const search = req.query.search || ''
     const category = req.query.category || ''
 
     let query = `
-      SELECT *
-      FROM channels
+      SELECT
+        c.*,
+        COALESCE(s.reserve_count, 0) AS reserve_count
+      FROM channels c
+      LEFT JOIN (
+        SELECT
+          channel_id,
+          COUNT(*) AS reserve_count
+        FROM channel_streams
+        WHERE is_online = true
+        GROUP BY channel_id
+      ) s ON s.channel_id = c.id
       WHERE 1=1
     `
 
@@ -871,41 +870,49 @@ app.get('/channels', auth, async (req, res) => {
 
     if (search) {
       params.push(`%${search}%`)
-      query += ` AND name ILIKE $${params.length}`
+      query += ` AND c.name ILIKE $${params.length}`
     }
 
     if (category) {
       params.push(category)
-      query += ` AND category = $${params.length}`
+      query += ` AND c.category = $${params.length}`
     }
 
     params.push(limit)
+
     query += `
       ORDER BY
         CASE
-          WHEN category ILIKE '%TV Aberta%' THEN 1
-          WHEN category ILIKE '%Esportes%' THEN 2
-          WHEN category ILIKE '%Filmes%' THEN 3
-          WHEN category ILIKE '%Infantil%' THEN 4
-          WHEN category ILIKE '%Notícias%' THEN 5
+          WHEN c.category ILIKE '%TV Aberta%' THEN 1
+          WHEN c.category ILIKE '%Esportes%' THEN 2
+          WHEN c.category ILIKE '%Filmes%' THEN 3
+          WHEN c.category ILIKE '%Infantil%' THEN 4
+          WHEN c.category ILIKE '%Notícias%' THEN 5
           ELSE 9
         END,
-        is_online DESC,
-        health_score DESC,
-        success_count DESC,
-        id DESC
+        c.is_online DESC,
+        c.health_score DESC,
+        c.success_count DESC,
+        c.id DESC
       LIMIT $${params.length}
     `
 
     params.push(offset)
+
     query += ` OFFSET $${params.length}`
 
     const result = await pool.query(query, params)
 
     res.json(result.rows)
+
   } catch (err) {
+
     console.log('ERRO GET CHANNELS:', err)
-    res.status(500).json({ error: 'erro ao buscar canais' })
+
+    res.status(500).json({
+      error: 'erro ao buscar canais'
+    })
+
   }
 })
 app.post('/channels', auth, async (req, res) => {
@@ -1599,24 +1606,133 @@ app.get('/channels/:id/streams', auth, async (req, res) => {
   }
 })
 app.get('/', (req, res) => {
+app.get('/epg/:channel', auth, async (req, res) => {
+
+  try {
+
+    const channel = req.params.channel
+
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM epg_now
+      WHERE channel_name ILIKE $1
+      ORDER BY start_time ASC
+      LIMIT 10
+      `,
+      [`%${channel}%`]
+    )
+
+    res.json(result.rows)
+
+  } catch (err) {
+
+    console.log('ERRO EPG API:', err)
+
+    res.status(500).json({
+      error: 'erro ao buscar epg'
+    })
+
+  }
+
+})
   res.send('IPTV AUTO SERVER COMPLETO ONLINE')
 })
 
 setInterval(async () => {
+
   try {
 
-    console.log('AUTO CHECK ONLINE...')
+    console.log('AUTO UPDATE INICIADO')
+
+    await importAllSources()
 
     await checkAndRemoveOffline()
 
-    console.log('AUTO CHECK FINALIZADO')
+    console.log('AUTO UPDATE FINALIZADO')
 
   } catch (err) {
 
-    console.log('AUTO CHECK ERROR:', err.message)
+    console.log('AUTO UPDATE ERROR:', err.message)
 
   }
-}, 1000 * 60 * 3)
+
+}, 1000 * 60 * 2)
+async function updateEPG() {
+
+  try {
+
+    console.log('ATUALIZANDO EPG...')
+
+    const parser = new XMLParser({
+      ignoreAttributes: false
+    })
+
+    const response = await fetch(EPG_URL)
+
+    const xml = await response.text()
+
+    const parsed = parser.parse(xml)
+
+    const programmes = parsed?.tv?.programme || []
+
+    await pool.query('DELETE FROM epg_now')
+
+    for (const p of programmes.slice(0, 5000)) {
+
+      const channel = p['@_channel'] || ''
+
+      const title =
+        typeof p.title === 'object'
+          ? p.title['#text']
+          : p.title || ''
+
+      const desc =
+        typeof p.desc === 'object'
+          ? p.desc['#text']
+          : p.desc || ''
+
+      const start = p['@_start']
+      const stop = p['@_stop']
+
+      if (!channel || !title) continue
+
+      await pool.query(
+        `
+        INSERT INTO epg_now
+        (
+          channel_name,
+          title,
+          description,
+          start_time,
+          end_time
+        )
+        VALUES ($1,$2,$3,$4,$5)
+        `,
+        [
+          channel,
+          title,
+          desc,
+          start,
+          stop
+        ]
+      )
+    }
+
+    console.log('EPG OK')
+
+  } catch (err) {
+
+    console.log('ERRO EPG:', err.message)
+
+  }
+}
+
+updateEPG()
+
+setInterval(() => {
+  updateEPG()
+}, 1000 * 60 * 60 * 2)
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`SERVER ON ${PORT}`)
