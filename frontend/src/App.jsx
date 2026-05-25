@@ -825,7 +825,7 @@ const nextEpg = epgList[1] || null
       </h2>
 
       <p>
-        {currentEpg.description || 'Programação ao vivo'}
+        {currentEpg.description || 'AO VIVO AGORA'}
       </p>
 
     </>
@@ -833,11 +833,11 @@ const nextEpg = epgList[1] || null
     <>
 
       <h2>
-        Programação ao vivo
+        AO VIVO AGORA
       </h2>
 
       <p>
-        EPG indisponível para este canal
+        Programação local em andamento
       </p>
 
     </>
@@ -1397,17 +1397,18 @@ const styles = {
   },
 
   epgBox: {
-  nextEpg: {
-          marginTop: 12,
-          color: '#38bdf8',
-          fontWeight: 'bold',
-          fontSize: 16
-      },
-    background: '#0a1737',
-    padding: 22,
-    borderRadius: 20,
-    marginTop: 25
-  },
+  background: '#0a1737',
+  padding: 22,
+  borderRadius: 20,
+  marginTop: 25
+},
+
+nextEpg: {
+  marginTop: 12,
+  color: '#38bdf8',
+  fontWeight: 'bold',
+  fontSize: 16
+},
 
   heroButtons: {
     display: 'flex',

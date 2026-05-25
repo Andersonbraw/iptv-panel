@@ -12,7 +12,7 @@ const { Pool } = pg
 const app = express()
 const PORT = 3000
 const JWT_SECRET = 'iptv_panel_secret_2026'
-const EPG_URL = 'https://iptv-org.github.io/epg/guides/br/br.xml'
+const EPG_URL = 'https://raw.githubusercontent.com/matthuisman/i.mjh.nz/master/PlutoTV/br.xml'
 
 app.use(cors())
 app.use(express.json({ limit: '50mb' }))
@@ -1577,7 +1577,9 @@ app.get('/series/:slug', auth, async (req, res) => {
 })
 
 app.get('/channels/:id/streams', auth, async (req, res) => {
+
   try {
+
     const channelId = req.params.id
 
     const main = await pool.query(
@@ -1600,34 +1602,83 @@ app.get('/channels/:id/streams', auth, async (req, res) => {
       main: main.rows[0] || null,
       streams: reserves.rows
     })
+
   } catch (err) {
+
     console.log('ERRO GET STREAMS:', err)
-    res.status(500).json({ error: 'erro ao buscar streams reserva' })
+
+    res.status(500).json({
+      error: 'erro ao buscar streams reserva'
+    })
+
   }
+
 })
-app.get('/', (req, res) => {
+
 app.get('/epg/:channel', auth, async (req, res) => {
 
   try {
 
-    const channel = req.params.channel
+    const rawChannel = req.params.channel || ''
+
+    const cleanChannel = rawChannel
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\(.*?\)/g, '')
+      .replace(/\[.*?\]/g, '')
+      .replace(/\bhd\b|\bfhd\b|\bsd\b|\b1080p\b|\b720p\b|\b480p\b/gi, '')
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .trim()
+
+    const keywords = cleanChannel
+      .split(' ')
+      .filter(word => word.length >= 3)
+
+    const priorityMap = {
+      globo: ['globo', 'rede globo'],
+      record: ['record', 'record news'],
+      sbt: ['sbt'],
+      band: ['band'],
+      cnn: ['cnn'],
+      nick: ['nick', 'nickelodeon'],
+      cartoon: ['cartoon'],
+      discovery: ['discovery'],
+      espn: ['espn'],
+      sportv: ['sportv']
+    }
+
+    let searchTerms = [...keywords]
+
+    for (const key of Object.keys(priorityMap)) {
+
+      if (cleanChannel.includes(key)) {
+
+        searchTerms = priorityMap[key]
+        break
+
+      }
+
+    }
 
     const result = await pool.query(
       `
       SELECT *
       FROM epg_now
-      WHERE channel_name ILIKE $1
+      WHERE ${searchTerms
+        .map((_, index) => `channel_name ILIKE $${index + 1}`)
+        .join(' OR ')}
       ORDER BY start_time ASC
       LIMIT 10
       `,
-      [`%${channel}%`]
+      searchTerms.map(term => `%${term}%`)
     )
 
     res.json(result.rows)
 
   } catch (err) {
 
-    console.log('ERRO EPG API:', err)
+    console.log('ERRO EPG API:', err.message)
 
     res.status(500).json({
       error: 'erro ao buscar epg'
@@ -1636,10 +1687,14 @@ app.get('/epg/:channel', auth, async (req, res) => {
   }
 
 })
+
+app.get('/', (req, res) => {
+
   res.send('IPTV AUTO SERVER COMPLETO ONLINE')
+
 })
 
-setInterval(async () => {
+  setInterval(async () => {
 
   try {
 
@@ -1692,8 +1747,26 @@ async function updateEPG() {
           ? p.desc['#text']
           : p.desc || ''
 
-      const start = p['@_start']
-      const stop = p['@_stop']
+      function parseEPGDate(str) {
+
+  if (!str) return null
+
+  const clean = str.substring(0, 14)
+
+  const year = clean.substring(0, 4)
+  const month = clean.substring(4, 6)
+  const day = clean.substring(6, 8)
+
+  const hour = clean.substring(8, 10)
+  const minute = clean.substring(10, 12)
+  const second = clean.substring(12, 14)
+
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`
+
+}
+
+const start = parseEPGDate(p['@_start'])
+const stop = parseEPGDate(p['@_stop'])
 
       if (!channel || !title) continue
 
