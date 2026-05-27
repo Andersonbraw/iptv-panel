@@ -252,7 +252,6 @@ function ClientPanel({ user, setUser }) {
                 <h1 style={styles.moviesTitle}>Filmes Premium</h1>
 
                 <p style={styles.moviesText}>
-                  Catálogo premium estilo Netflix.
                 </p>
               </div>
             </div>
@@ -329,7 +328,6 @@ function ClientPanel({ user, setUser }) {
                 <h1 style={styles.moviesTitle}>Séries Premium</h1>
 
                 <p style={styles.moviesText}>
-                  Episódios e séries importados via M3U.
                 </p>
               </div>
             </div>
