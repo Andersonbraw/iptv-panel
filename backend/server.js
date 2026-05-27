@@ -374,7 +374,7 @@ function isBadMovieItem(movie) {
 'epg',
 'vod',
 'vod tv',
-'arab',,
+'arab',
     'al ',
     'quran',
     'islam',
