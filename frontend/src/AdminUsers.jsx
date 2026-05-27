@@ -21,12 +21,19 @@ function AdminUsers({ users, reloadUsers }) {
     }
   }
 
-  async function addThirtyDays(id) {
+  async function addDays(user, days) {
     try {
-      await axios.patch(`${API}/admin/users/${id}/add-30-days`, {}, { headers })
-      reloadUsers()
-    } catch (err) {
-      alert(err.response?.data?.error || 'Erro ao adicionar 30 dias')
+      const now = new Date()
+      const currentExpire = user.expires_at ? new Date(user.expires_at) : null
+      const baseDate = currentExpire && currentExpire > now ? currentExpire : now
+
+      baseDate.setDate(baseDate.getDate() + days)
+
+      await updateUser(user.id, {
+        expires_at: baseDate.toISOString()
+      })
+    } catch {
+      alert('Erro ao adicionar dias')
     }
   }
 
@@ -74,9 +81,10 @@ function AdminUsers({ users, reloadUsers }) {
   function copyLogin() {
     if (!createdLogin) return
 
-    const text = `Email: ${createdLogin.email}\nSenha: ${createdLogin.password}`
+    navigator.clipboard.writeText(
+      `Email: ${createdLogin.email}\nSenha: ${createdLogin.password}`
+    )
 
-    navigator.clipboard.writeText(text)
     alert('Login copiado')
   }
 
@@ -108,17 +116,8 @@ function AdminUsers({ users, reloadUsers }) {
         <div style={styles.loginBox}>
           <h3>Login criado</h3>
 
-          <input
-            readOnly
-            value={createdLogin.email}
-            style={styles.copyInput}
-          />
-
-          <input
-            readOnly
-            value={createdLogin.password}
-            style={styles.copyInput}
-          />
+          <input readOnly value={createdLogin.email} style={styles.copyInput} />
+          <input readOnly value={createdLogin.password} style={styles.copyInput} />
 
           <button style={styles.greenButton} onClick={copyLogin}>
             Copiar email e senha
@@ -132,8 +131,6 @@ function AdminUsers({ users, reloadUsers }) {
             <strong>{user.name}</strong>
 
             <p style={styles.email}>{user.email}</p>
-            <p style={{ color: '#22c55e' }}>
-            </p>
 
             <small>
               Plano: {user.plan || 'free'} | Conexões: {user.max_connections || 1}
@@ -141,9 +138,7 @@ function AdminUsers({ users, reloadUsers }) {
 
             <br />
 
-            <small>
-              Créditos: {user.credits || 0}
-            </small>
+            <small>Créditos: {user.credits || 0}</small>
 
             <br />
 
@@ -153,6 +148,40 @@ function AdminUsers({ users, reloadUsers }) {
                 ? new Date(user.expires_at).toLocaleDateString('pt-BR')
                 : 'Sem vencimento'}
             </small>
+
+            <div style={styles.quickActions}>
+              <button style={styles.smallDarkButton} onClick={() => updateUser(user.id, { max_connections: 1 })}>
+                1 conexão
+              </button>
+
+              <button style={styles.smallDarkButton} onClick={() => updateUser(user.id, { max_connections: 2 })}>
+                2 conexões
+              </button>
+
+              <button style={styles.smallDarkButton} onClick={() => updateUser(user.id, { max_connections: 5 })}>
+                5 conexões
+              </button>
+
+              <button style={styles.smallYellowButton} onClick={() => addDays(user, 7)}>
+                +7 dias
+              </button>
+
+              <button style={styles.smallYellowButton} onClick={() => addDays(user, 15)}>
+                +15 dias
+              </button>
+
+              <button style={styles.smallYellowButton} onClick={() => addDays(user, 30)}>
+                +30 dias
+              </button>
+
+              <button style={styles.smallYellowButton} onClick={() => addDays(user, 60)}>
+                +60 dias
+              </button>
+
+              <button style={styles.smallYellowButton} onClick={() => addDays(user, 90)}>
+                +90 dias
+              </button>
+            </div>
           </div>
 
           <div style={styles.right}>
@@ -163,46 +192,24 @@ function AdminUsers({ users, reloadUsers }) {
             </p>
 
             <div style={styles.actions}>
-              <button
-                style={styles.greenButton}
-                onClick={() => updateUser(user.id, { status: 'active' })}
-              >
+              <button style={styles.greenButton} onClick={() => updateUser(user.id, { status: 'active' })}>
                 Ativar
               </button>
 
-              <button
-                style={styles.redButton}
-                onClick={() => updateUser(user.id, { status: 'blocked' })}
-              >
+              <button style={styles.redButton} onClick={() => updateUser(user.id, { status: 'blocked' })}>
                 Bloquear
               </button>
 
-              <button
-                style={styles.blueButton}
-                onClick={() => updateUser(user.id, { plan: 'premium' })}
-              >
+              <button style={styles.blueButton} onClick={() => updateUser(user.id, { plan: 'premium' })}>
                 Premium
               </button>
 
-              <button
-                style={styles.grayButton}
-                onClick={() => updateUser(user.id, { plan: 'free' })}
-              >
+              <button style={styles.grayButton} onClick={() => updateUser(user.id, { plan: 'free' })}>
                 Free
               </button>
 
-              <button
-                style={styles.yellowButton}
-                onClick={() => addThirtyDays(user.id)}
-              >
-                +30 dias
-              </button>
-
               {user.role !== 'admin' && (
-                <button
-                  style={styles.deleteButton}
-                  onClick={() => deleteUser(user.id)}
-                >
+                <button style={styles.deleteButton} onClick={() => deleteUser(user.id)}>
                   Excluir
                 </button>
               )}
@@ -215,141 +222,25 @@ function AdminUsers({ users, reloadUsers }) {
 }
 
 const styles = {
-  box: {
-    background: '#07142b',
-    padding: 20,
-    borderRadius: 24
-  },
-
-  topBar: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-    gap: 20,
-    flexWrap: 'wrap'
-  },
-
-  topActions: {
-    display: 'flex',
-    gap: 10,
-    alignItems: 'center',
-    flexWrap: 'wrap'
-  },
-
-  creditInput: {
-    width: 90,
-    padding: 10,
-    borderRadius: 10,
-    border: '1px solid #334155',
-    background: '#020617',
-    color: '#fff'
-  },
-
-  loginBox: {
-    background: '#020617',
-    padding: 18,
-    borderRadius: 16,
-    marginBottom: 20,
-    border: '1px solid #38bdf8'
-  },
-
-  copyInput: {
-    width: '100%',
-    padding: 12,
-    marginBottom: 10,
-    borderRadius: 10,
-    border: '1px solid #334155',
-    background: '#07142b',
-    color: '#fff',
-    boxSizing: 'border-box'
-  },
-
-  card: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    gap: 20,
-    background: '#020617',
-    padding: 18,
-    borderRadius: 16,
-    marginTop: 14
-  },
-
-  email: {
-    color: '#94a3b8'
-  },
-
-  right: {
-    minWidth: 420,
-    textAlign: 'right'
-  },
-
-  actions: {
-    display: 'flex',
-    gap: 8,
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end'
-  },
-
-  greenButton: {
-    padding: '9px 12px',
-    border: 'none',
-    borderRadius: 10,
-    background: '#22c55e',
-    color: '#000',
-    fontWeight: 'bold',
-    cursor: 'pointer'
-  },
-
-  redButton: {
-    padding: '9px 12px',
-    border: 'none',
-    borderRadius: 10,
-    background: '#ef4444',
-    color: '#fff',
-    fontWeight: 'bold',
-    cursor: 'pointer'
-  },
-
-  blueButton: {
-    padding: '9px 12px',
-    border: 'none',
-    borderRadius: 10,
-    background: '#38bdf8',
-    color: '#000',
-    fontWeight: 'bold',
-    cursor: 'pointer'
-  },
-
-  grayButton: {
-    padding: '9px 12px',
-    border: 'none',
-    borderRadius: 10,
-    background: '#334155',
-    color: '#fff',
-    fontWeight: 'bold',
-    cursor: 'pointer'
-  },
-
-  yellowButton: {
-    padding: '9px 12px',
-    border: 'none',
-    borderRadius: 10,
-    background: '#facc15',
-    color: '#000',
-    fontWeight: 'bold',
-    cursor: 'pointer'
-  },
-
-  deleteButton: {
-    padding: '9px 12px',
-    border: 'none',
-    borderRadius: 10,
-    background: '#991b1b',
-    color: '#fff',
-    fontWeight: 'bold',
-    cursor: 'pointer'
-  }
+  box: { background: '#07142b', padding: 20, borderRadius: 24 },
+  topBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 20, flexWrap: 'wrap' },
+  topActions: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
+  creditInput: { width: 90, padding: 10, borderRadius: 10, border: '1px solid #334155', background: '#020617', color: '#fff' },
+  loginBox: { background: '#020617', padding: 18, borderRadius: 16, marginBottom: 20, border: '1px solid #38bdf8' },
+  copyInput: { width: '100%', padding: 12, marginBottom: 10, borderRadius: 10, border: '1px solid #334155', background: '#07142b', color: '#fff', boxSizing: 'border-box' },
+  card: { display: 'flex', justifyContent: 'space-between', gap: 20, background: '#020617', padding: 18, borderRadius: 16, marginTop: 14 },
+  email: { color: '#94a3b8' },
+  right: { minWidth: 420, textAlign: 'right' },
+  actions: { display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' },
+  quickActions: { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 },
+  smallDarkButton: { padding: '7px 10px', border: 'none', borderRadius: 8, background: '#1e293b', color: '#fff', fontWeight: 'bold', cursor: 'pointer' },
+  smallYellowButton: { padding: '7px 10px', border: 'none', borderRadius: 8, background: '#facc15', color: '#000', fontWeight: 'bold', cursor: 'pointer' },
+  greenButton: { padding: '9px 12px', border: 'none', borderRadius: 10, background: '#22c55e', color: '#000', fontWeight: 'bold', cursor: 'pointer' },
+  redButton: { padding: '9px 12px', border: 'none', borderRadius: 10, background: '#ef4444', color: '#fff', fontWeight: 'bold', cursor: 'pointer' },
+  blueButton: { padding: '9px 12px', border: 'none', borderRadius: 10, background: '#38bdf8', color: '#000', fontWeight: 'bold', cursor: 'pointer' },
+  grayButton: { padding: '9px 12px', border: 'none', borderRadius: 10, background: '#334155', color: '#fff', fontWeight: 'bold', cursor: 'pointer' },
+  yellowButton: { padding: '9px 12px', border: 'none', borderRadius: 10, background: '#facc15', color: '#000', fontWeight: 'bold', cursor: 'pointer' },
+  deleteButton: { padding: '9px 12px', border: 'none', borderRadius: 10, background: '#991b1b', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }
 }
 
 export default AdminUsers
