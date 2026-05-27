@@ -64,87 +64,101 @@ function AdminMovies() {
   }
 
   async function removeBadMovies() {
-    if (!confirm('Remover canais IPTV misturados nos filmes e séries?')) {
-      return
-    }
+  if (!confirm('Remover canais IPTV misturados nos filmes e séries?')) {
+    return
+  }
 
-    try {
-      const badWords = [
-        'tv',
-        'channel',
-        'news',
-        'sport',
-        'sports',
-        'live',
-        'radio',
-        '24/7',
-        '24h',
-        'cnn',
-        'bbc',
-        'fox news',
-        'hbo tv',
-        'iptv',
-        'playlist',
-        'm3u',
-        'bein',
-        'espn',
-        'sky',
-        'globo',
-        'sbt',
-        'record',
-        'band',
-        'rede tv',
-        'premiere',
-        'combate',
-        'telecine',
-        'discovery channel',
-        'animal planet',
-        'nat geo',
-        'cartoon',
-        'nick',
-        'mtv',
-        'music',
-        'futebol',
-        'soccer',
-        'nba',
-        'nfl',
-        'ufc',
-        'ao vivo',
-        'live tv',
-        'hd tv',
-        '4k tv',
-        'sd tv'
-      ]
+  try {
+    const badWords = [
+      'reuters',
+      'trace',
+      'trace latina',
+      'trace urban',
+      'deluxe lounge',
+      'shorts',
+      'planet',
+      'pluto',
+      'channel',
+      'tv',
+      'news',
+      'live',
+      'ao vivo',
+      '24',
+      '24h',
+      'radio',
+      'music',
+      'musica',
+      'cnn',
+      'bbc',
+      'fox',
+      'sport',
+      'sports',
+      'futebol',
+      'soccer',
+      'bein',
+      'espn',
+      'premiere',
+      'combate',
+      'telecine',
+      'globoplay',
+      'sbt',
+      'record',
+      'band',
+      'redetv',
+      'sky',
+      'playlist',
+      'm3u',
+      'nba',
+      'nfl',
+      'ufc',
+      'cartoon',
+      'nick',
+      'mtv',
+      'animal planet',
+      'discovery channel',
+      'nat geo',
+      'hd tv',
+      '4k tv',
+      'sd tv'
+    ]
 
-      let removed = 0
+    let removed = 0
 
-      for (const movie of movies) {
-        const title = (movie.title || '').toLowerCase()
+    for (const movie of movies) {
 
-        const isBad = badWords.some(word =>
-          title.includes(word)
+      const title = `
+        ${movie.title || ''}
+        ${movie.name || ''}
+        ${movie.category || ''}
+      `.toLowerCase()
+
+      const isBad = badWords.some(word =>
+        title.includes(word.toLowerCase())
+      )
+
+      if (isBad) {
+
+        await axios.delete(
+          `${API}/movies/${movie.id}`,
+          authHeaders
         )
 
-        if (isBad) {
-          await axios.delete(
-            `${API}/movies/${movie.id}`,
-            authHeaders
-          )
-
-          removed++
-        }
+        removed++
       }
-
-      alert(`Removidos: ${removed}`)
-
-      loadMovies()
-    } catch (err) {
-      alert(
-        err.response?.data?.error ||
-        'Erro ao limpar'
-      )
     }
+
+    alert(`Removidos: ${removed}`)
+
+    loadMovies()
+
+  } catch (err) {
+
+    alert(
+      err.response?.data?.error ||
+      'Erro ao limpar'
+    )
   }
+}
 
   useEffect(() => {
     loadMovies()
