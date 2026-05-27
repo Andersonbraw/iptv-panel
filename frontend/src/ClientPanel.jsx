@@ -37,15 +37,7 @@ function HlsPlayer({ src, style }) {
       video.src = src
       video.play().catch(() => {})
     }
-    
-    function openPlayer(item) {
-  setSelectedStream({
-    title: item.title || item.name,
-    url: item.video || item.url
-  })
 
-  setPlayerOpen(true)
-}
     return () => {
       if (hls) hls.destroy()
     }
@@ -141,6 +133,15 @@ function ClientPanel({ user, setUser }) {
   const filteredSeries = onlySeries.filter(item =>
     item.title?.toLowerCase().includes(seriesSearch.toLowerCase())
   )
+
+  function openPlayer(item) {
+    setSelectedStream({
+      title: item.title || item.name,
+      url: item.video || item.url
+    })
+
+    setPlayerOpen(true)
+  }
 
   return (
     <div style={styles.app}>
@@ -452,6 +453,12 @@ function ClientPanel({ user, setUser }) {
             </div>
           </div>
         )}
+
+        <PlayerModal
+          open={playerOpen}
+          stream={selectedStream}
+          onClose={() => setPlayerOpen(false)}
+        />
       </main>
     </div>
   )
