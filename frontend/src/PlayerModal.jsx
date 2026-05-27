@@ -1,56 +1,90 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import Hls from 'hls.js'
 
-function PlayerModal({
-  open,
-  onClose,
-  stream
-}) {
+function PlayerModal({ open, onClose, stream }) {
+  const videoRef = useRef(null)
   const [loading, setLoading] = useState(true)
-
   const [error, setError] = useState(false)
+
+  useEffect(() => {
+    if (!open || !stream?.url || !videoRef.current) return
+
+    const video = videoRef.current
+    let hls = null
+
+    setLoading(true)
+    setError(false)
+
+    video.pause()
+    video.removeAttribute('src')
+    video.load()
+
+    if (stream.url.includes('.m3u8') && Hls.isSupported()) {
+      hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true
+      })
+
+      hls.loadSource(stream.url)
+      hls.attachMedia(video)
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        setLoading(false)
+        video.play().catch(() => {})
+      })
+
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (data.fatal) {
+          setLoading(false)
+          setError(true)
+        }
+      })
+    } else {
+      video.src = stream.url
+
+      video.onloadeddata = () => {
+        setLoading(false)
+      }
+
+      video.onerror = () => {
+        setLoading(false)
+        setError(true)
+      }
+
+      video.play().catch(() => {})
+    }
+
+    return () => {
+      if (hls) hls.destroy()
+    }
+  }, [open, stream])
 
   if (!open || !stream) return null
 
   return (
     <div style={styles.overlay}>
       <div style={styles.modal}>
-
         <div style={styles.top}>
           <div>
-            <div style={styles.badge}>
-              PLAYER PREMIUM
-            </div>
-
-            <h2 style={styles.title}>
-              {stream.title}
-            </h2>
+            <div style={styles.badge}>PLAYER PREMIUM</div>
+            <h2 style={styles.title}>{stream.title}</h2>
           </div>
 
-          <button
-            onClick={onClose}
-            style={styles.close}
-          >
+          <button onClick={onClose} style={styles.close}>
             ✕
           </button>
         </div>
 
         <div style={styles.videoContainer}>
-
           {loading && !error && (
-            <div style={styles.loading}>
-              Carregando vídeo...
-            </div>
+            <div style={styles.loading}>Carregando vídeo...</div>
           )}
 
           {error && (
             <div style={styles.errorBox}>
-              <h3 style={styles.errorTitle}>
-                Vídeo indisponível
-              </h3>
-
+              <h3 style={styles.errorTitle}>Vídeo indisponível</h3>
               <p style={styles.errorText}>
-                Este conteúdo pode estar offline
-                ou bloqueado.
+                Este conteúdo pode estar offline ou bloqueado.
               </p>
 
               <a
@@ -65,22 +99,13 @@ function PlayerModal({
           )}
 
           <video
-            src={stream.url}
+            ref={videoRef}
             controls
             autoPlay
             playsInline
             style={styles.video}
-            onLoadedData={() => {
-              setLoading(false)
-            }}
-            onError={() => {
-              setLoading(false)
-              setError(true)
-            }}
           />
-
         </div>
-
       </div>
     </div>
   )
@@ -89,10 +114,7 @@ function PlayerModal({
 const styles = {
   overlay: {
     position: 'fixed',
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
+    inset: 0,
     background: 'rgba(0,0,0,0.95)',
     zIndex: 9999,
     display: 'flex',
