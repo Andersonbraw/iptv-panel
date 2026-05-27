@@ -6,7 +6,7 @@ import AdminChannels from './AdminChannels'
 import AdminMovies from './AdminMovies'
 import AdminSeries from './AdminSeries'
 
-const API = 'http://paineliptvonline.kesug.com:3000'
+const API = 'https://iptv-backend-cuxf.onrender.com'
 
 function AdminPanel({ user, setUser }) {
   const [adminUsers, setAdminUsers] = useState([])

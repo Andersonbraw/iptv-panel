@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
 
-const API = 'http://paineliptvonline.kesug.com:3000'
+const API = 'https://iptv-backend-cuxf.onrender.com'
 
 function AdminSeries() {
   const [series, setSeries] = useState([])

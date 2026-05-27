@@ -19,7 +19,7 @@ import {
   ChevronRight
 } from 'lucide-react'
 
-const API = 'http://paineliptvonline.kesug.com:3000'
+const API = 'https://iptv-backend-cuxf.onrender.com'
 
 async function toggleUserStatus(user, reloadUsers) {
   try {

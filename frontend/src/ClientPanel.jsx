@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 import Hls from 'hls.js'
 
-const API = 'http://paineliptvonline.kesug.com:3000'
+const API = 'https://iptv-backend-cuxf.onrender.com'
 
 function HlsPlayer({ src, style }) {
   const videoRef = useRef(null)

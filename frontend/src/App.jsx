@@ -5,7 +5,7 @@ import Login from './Login'
 import AdminPanel from './AdminPanel'
 import ClientPanel from './ClientPanel'
 
-const API = 'http://paineliptvonline.kesug.com:3000'
+const API = 'https://iptv-backend-cuxf.onrender.com'
 
 function App() {
   const [user, setUser] = useState(() => {
