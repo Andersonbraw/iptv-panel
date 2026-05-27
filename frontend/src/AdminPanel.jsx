@@ -37,27 +37,30 @@ function AdminPanel({ user, setUser }) {
     loadAdminUsers()
   }, [])
 
+  const totalUsers = adminUsers.length
+  const activeUsers = adminUsers.filter(u => u.status === 'active').length
+  const blockedUsers = adminUsers.filter(u => u.status === 'blocked').length
+  const premiumUsers = adminUsers.filter(u => u.plan === 'premium').length
+  const freeUsers = adminUsers.filter(u => u.plan === 'free').length
+  const totalCredits = adminUsers.reduce(
+    (total, item) => total + Number(item.credits || 0),
+    0
+  )
+
   return (
     <div style={styles.app}>
       <aside style={styles.sidebar}>
         <h1 style={styles.logo}>IPTV PANEL</h1>
 
         <div style={styles.userBox}>
-          <small style={{ color: '#94a3b8' }}>
-            ADMINISTRADOR
-          </small>
-
+          <small style={{ color: '#94a3b8' }}>ADMINISTRADOR</small>
           <h2>{user.name}</h2>
         </div>
 
         <div style={styles.menu}>
           <button
             type="button"
-            style={
-              page === 'dashboard'
-                ? styles.activeMenuButton
-                : styles.menuButton
-            }
+            style={page === 'dashboard' ? styles.activeMenuButton : styles.menuButton}
             onClick={() => setPage('dashboard')}
           >
             Dashboard
@@ -65,11 +68,7 @@ function AdminPanel({ user, setUser }) {
 
           <button
             type="button"
-            style={
-              page === 'users'
-                ? styles.activeMenuButton
-                : styles.menuButton
-            }
+            style={page === 'users' ? styles.activeMenuButton : styles.menuButton}
             onClick={() => setPage('users')}
           >
             Usuários
@@ -77,11 +76,7 @@ function AdminPanel({ user, setUser }) {
 
           <button
             type="button"
-            style={
-              page === 'channels'
-                ? styles.activeMenuButton
-                : styles.menuButton
-            }
+            style={page === 'channels' ? styles.activeMenuButton : styles.menuButton}
             onClick={() => setPage('channels')}
           >
             Canais
@@ -89,11 +84,7 @@ function AdminPanel({ user, setUser }) {
 
           <button
             type="button"
-            style={
-              page === 'movies'
-                ? styles.activeMenuButton
-                : styles.menuButton
-            }
+            style={page === 'movies' ? styles.activeMenuButton : styles.menuButton}
             onClick={() => setPage('movies')}
           >
             Filmes
@@ -101,43 +92,18 @@ function AdminPanel({ user, setUser }) {
 
           <button
             type="button"
-            style={
-              page === 'series'
-                ? styles.activeMenuButton
-                : styles.menuButton
-            }
+            style={page === 'series' ? styles.activeMenuButton : styles.menuButton}
             onClick={() => setPage('series')}
           >
             Séries
           </button>
 
-          <button
-            type="button"
-            style={styles.menuButton}
-          >
-            EPG
-          </button>
-
-          <button
-            type="button"
-            style={styles.menuButton}
-          >
-            Financeiro
-          </button>
-
-          <button
-            type="button"
-            style={styles.menuButton}
-          >
-            Revendedores
-          </button>
+          <button type="button" style={styles.menuButton}>EPG</button>
+          <button type="button" style={styles.menuButton}>Financeiro</button>
+          <button type="button" style={styles.menuButton}>Revendedores</button>
         </div>
 
-        <button
-          type="button"
-          style={styles.redButton}
-          onClick={logout}
-        >
+        <button type="button" style={styles.redButton} onClick={logout}>
           Sair
         </button>
       </aside>
@@ -145,47 +111,56 @@ function AdminPanel({ user, setUser }) {
       <main style={styles.main}>
         {page === 'dashboard' && (
           <>
-            <h1 style={styles.title}>
-              Dashboard Admin
-            </h1>
+            <h1 style={styles.title}>Dashboard Admin</h1>
 
             <div style={styles.statsGrid}>
-              <div style={styles.statCard}>
-                <h1>{adminUsers.length}</h1>
-                <p>Usuários</p>
+              <div style={styles.blueCard}>
+                <h1>{totalUsers}</h1>
+                <p>Total usuários</p>
               </div>
 
-              <div style={styles.statCard}>
-                <h1>ON</h1>
-                <p>Sistema</p>
+              <div style={styles.greenCard}>
+                <h1>{activeUsers}</h1>
+                <p>Usuários ativos</p>
               </div>
 
-              <div style={styles.statCard}>
-                <h1>Premium</h1>
-                <p>Planos</p>
+              <div style={styles.redCard}>
+                <h1>{blockedUsers}</h1>
+                <p>Bloqueados</p>
               </div>
+
+              <div style={styles.purpleCard}>
+                <h1>{premiumUsers}</h1>
+                <p>Premium</p>
+              </div>
+
+              <div style={styles.orangeCard}>
+                <h1>{freeUsers}</h1>
+                <p>Free</p>
+              </div>
+
+              <div style={styles.yellowCard}>
+                <h1>{totalCredits}</h1>
+                <p>Créditos totais</p>
+              </div>
+            </div>
+
+            <div style={styles.infoBox}>
+              <h2>Sistema IPTV Online</h2>
+              <p>Backend Render conectado</p>
+              <p>Banco Supabase ativo</p>
+              <p>Painel admin operacional</p>
             </div>
           </>
         )}
 
         {page === 'users' && (
-          <AdminUsers
-            users={adminUsers}
-            reloadUsers={loadAdminUsers}
-          />
+          <AdminUsers users={adminUsers} reloadUsers={loadAdminUsers} />
         )}
 
-        {page === 'channels' && (
-          <AdminChannels />
-        )}
-
-        {page === 'movies' && (
-          <AdminMovies />
-        )}
-
-        {page === 'series' && (
-          <AdminSeries />
-        )}
+        {page === 'channels' && <AdminChannels />}
+        {page === 'movies' && <AdminMovies />}
+        {page === 'series' && <AdminSeries />}
       </main>
     </div>
   )
@@ -276,11 +251,48 @@ const styles = {
 
   statsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(3,1fr)',
+    gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))',
     gap: 20
   },
 
-  statCard: {
+  blueCard: {
+    background: '#0f172a',
+    padding: 30,
+    borderRadius: 24
+  },
+
+  greenCard: {
+    background: '#052e16',
+    padding: 30,
+    borderRadius: 24
+  },
+
+  redCard: {
+    background: '#450a0a',
+    padding: 30,
+    borderRadius: 24
+  },
+
+  purpleCard: {
+    background: '#3b0764',
+    padding: 30,
+    borderRadius: 24
+  },
+
+  orangeCard: {
+    background: '#7c2d12',
+    padding: 30,
+    borderRadius: 24
+  },
+
+  yellowCard: {
+    background: '#713f12',
+    padding: 30,
+    borderRadius: 24
+  },
+
+  infoBox: {
+    marginTop: 30,
     background: '#07142b',
     padding: 30,
     borderRadius: 24
