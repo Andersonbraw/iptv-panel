@@ -7,14 +7,42 @@ import { XMLParser } from 'fast-xml-parser'
 
 dotenv.config()
 
+const TMDB_API_KEY = process.env.TMDB_API_KEY || 'd7d6f05500f868564751a589e219be96'
+
+async function fetchTMDBPoster(title) {
+  try {
+    const response = await fetch(
+      `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=pt-BR&query=${encodeURIComponent(title)}`
+    )
+
+    const data = await response.json()
+
+    if (!data.results || data.results.length === 0) return null
+
+    const movie = data.results[0]
+
+    return {
+      poster: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : '',
+      banner: movie.backdrop_path ? `https://image.tmdb.org/t/p/original${movie.backdrop_path}` : '',
+      overview: movie.overview || '',
+      year: movie.release_date ? movie.release_date.substring(0, 4) : ''
+    }
+  } catch (err) {
+    console.log('TMDB ERROR:', err.message)
+    return null
+  }
+}
+
 const { Pool } = pg
 
 const app = express()
-const PORT = 3000
+const PORT = process.env.PORT || 3000
 const JWT_SECRET = 'iptv_panel_secret_2026'
 const EPG_URL = 'https://raw.githubusercontent.com/matthuisman/i.mjh.nz/master/PlutoTV/br.xml'
 
-app.use(cors())
+app.use(cors({
+  origin: '*'
+}))
 app.use(express.json({ limit: '50mb' }))
 
 const pool = new Pool({
@@ -24,23 +52,22 @@ const pool = new Pool({
   }
 })
 
-const DEFAULT_GITHUB_SOURCES = [
-  {
-    name: 'IPTV Org Brasil',
-    url: 'https://raw.githubusercontent.com/iptv-org/iptv/master/streams/br.m3u'
-  },
-  
-]
-
 async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       name TEXT,
       email TEXT UNIQUE,
-      password TEXT
+      password TEXT,
+      role TEXT DEFAULT 'client',
+      status TEXT DEFAULT 'active'
     )
   `)
+
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS credits INTEGER DEFAULT 0`)
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free'`)
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS max_connections INTEGER DEFAULT 1`)
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP`)
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS channels (
@@ -50,41 +77,20 @@ async function initDb() {
       category TEXT,
       logo TEXT,
       is_online BOOLEAN DEFAULT TRUE,
-      offline_count INTEGER DEFAULT 0,
-      last_checked TIMESTAMP,
       created_at TIMESTAMP DEFAULT NOW()
     )
   `)
 
-  await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS logo TEXT`)
-  await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS is_online BOOLEAN DEFAULT TRUE`)
-  await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS offline_count INTEGER DEFAULT 0`)
-  await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS last_checked TIMESTAMP`)
-  await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS health_score INTEGER DEFAULT 50`)
-  await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS success_count INTEGER DEFAULT 0`)
-  await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS fail_count INTEGER DEFAULT 0`)
-  await pool.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`)
-
   await pool.query(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'channels_url_unique'
-      ) THEN
-        ALTER TABLE channels ADD CONSTRAINT channels_url_unique UNIQUE (url);
-      END IF;
-    END
-    $$;
-  `)
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS profiles (
+    CREATE TABLE IF NOT EXISTS movies (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER,
-      name TEXT,
-      avatar TEXT,
-      color TEXT,
-      is_kids BOOLEAN DEFAULT FALSE,
+      title TEXT,
+      year TEXT,
+      category TEXT,
+      image TEXT,
+      banner TEXT,
+      video TEXT,
+      description TEXT,
       created_at TIMESTAMP DEFAULT NOW()
     )
   `)
@@ -93,103 +99,29 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS favorites (
       id SERIAL PRIMARY KEY,
       user_id INTEGER,
-      profile_id INTEGER,
-      channel_id INTEGER,
-      created_at TIMESTAMP DEFAULT NOW()
+      channel_id INTEGER
     )
   `)
 
-  await pool.query(`ALTER TABLE favorites ADD COLUMN IF NOT EXISTS user_id INTEGER`)
-  await pool.query(`ALTER TABLE favorites ADD COLUMN IF NOT EXISTS profile_id INTEGER`)
-  await pool.query(`ALTER TABLE favorites ADD COLUMN IF NOT EXISTS channel_id INTEGER`)
-  await pool.query(`ALTER TABLE favorites ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`)
-
   await pool.query(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'favorites_profile_channel_unique'
-      ) THEN
-        ALTER TABLE favorites ADD CONSTRAINT favorites_profile_channel_unique UNIQUE (profile_id, channel_id);
-      END IF;
-    END
-    $$;
-  `)
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS watch_history (
+    CREATE TABLE IF NOT EXISTS channel_streams (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER,
-      profile_id INTEGER,
       channel_id INTEGER,
-      progress INTEGER DEFAULT 0,
-      watched_seconds INTEGER DEFAULT 0,
-      updated_at TIMESTAMP DEFAULT NOW()
-    )
-  `)
-
-  await pool.query(`ALTER TABLE watch_history ADD COLUMN IF NOT EXISTS user_id INTEGER`)
-  await pool.query(`ALTER TABLE watch_history ADD COLUMN IF NOT EXISTS profile_id INTEGER`)
-  await pool.query(`ALTER TABLE watch_history ADD COLUMN IF NOT EXISTS channel_id INTEGER`)
-  await pool.query(`ALTER TABLE watch_history ADD COLUMN IF NOT EXISTS progress INTEGER DEFAULT 0`)
-  await pool.query(`ALTER TABLE watch_history ADD COLUMN IF NOT EXISTS watched_seconds INTEGER DEFAULT 0`)
-  await pool.query(`ALTER TABLE watch_history ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`)
-
-  await pool.query(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'history_profile_channel_unique'
-      ) THEN
-        ALTER TABLE watch_history ADD CONSTRAINT history_profile_channel_unique UNIQUE (profile_id, channel_id);
-      END IF;
-    END
-    $$;
-  `)
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS m3u_sources (
-      id SERIAL PRIMARY KEY,
       name TEXT,
-      url TEXT UNIQUE,
-      active BOOLEAN DEFAULT TRUE,
-      source_type TEXT DEFAULT 'manual',
-      last_import TIMESTAMP,
-      created_at TIMESTAMP DEFAULT NOW()
+      url TEXT UNIQUE
     )
   `)
 
-  await pool.query(`ALTER TABLE m3u_sources ADD COLUMN IF NOT EXISTS source_type TEXT DEFAULT 'manual'`)
-  await pool.query(`ALTER TABLE m3u_sources ADD COLUMN IF NOT EXISTS last_import TIMESTAMP`)
-
-  for (const source of DEFAULT_GITHUB_SOURCES) {
-    await pool.query(
-      `
-      INSERT INTO m3u_sources (name, url, active, source_type)
-      VALUES ($1,$2,true,'github_auto')
-      ON CONFLICT (url)
-      DO UPDATE SET active = true, source_type = 'github_auto'
-      `,
-      [source.name, source.url]
-    )
-  }
-  
   await pool.query(`
-  CREATE TABLE IF NOT EXISTS channel_streams (
-    id SERIAL PRIMARY KEY,
-    channel_id INTEGER REFERENCES channels(id) ON DELETE CASCADE,
-    name TEXT,
-    url TEXT UNIQUE,
-    source TEXT,
-    quality TEXT DEFAULT 'AUTO',
-    is_online BOOLEAN DEFAULT TRUE,
-    health_score INTEGER DEFAULT 50,
-    success_count INTEGER DEFAULT 0,
-    fail_count INTEGER DEFAULT 0,
-    last_checked TIMESTAMP,
-    created_at TIMESTAMP DEFAULT NOW()
-  )
-`)
+    CREATE TABLE IF NOT EXISTS epg_now (
+      id SERIAL PRIMARY KEY,
+      channel_name TEXT,
+      title TEXT,
+      description TEXT,
+      start_time TIMESTAMP,
+      end_time TIMESTAMP
+    )
+  `)
 
   console.log('BANCO OK')
 }
@@ -199,7 +131,9 @@ initDb()
 function auth(req, res, next) {
   const header = req.headers.authorization
 
-  if (!header) return res.status(401).json({ error: 'token inválido' })
+  if (!header) {
+    return res.status(401).json({ error: 'token inválido' })
+  }
 
   const token = header.replace('Bearer ', '')
 
@@ -208,6 +142,25 @@ function auth(req, res, next) {
     next()
   } catch {
     return res.status(401).json({ error: 'token inválido' })
+  }
+}
+
+function adminOnly(req, res, next) {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'somente admin' })
+  }
+
+  next()
+}
+
+function generateRandomLogin() {
+  const number = Math.floor(100000 + Math.random() * 900000)
+  const password = Math.random().toString(36).slice(2, 10)
+
+  return {
+    name: `Cliente ${number}`,
+    email: `cliente${number}@iptv.local`,
+    password
   }
 }
 
@@ -225,68 +178,6 @@ function normalizeGithubUrl(url) {
   return url
 }
 
-const LOGO_MAP = {
-  globo:
-    'https://upload.wikimedia.org/wikipedia/commons/0/02/TV_Globo_logo.svg',
-
-  sbt:
-    'https://upload.wikimedia.org/wikipedia/commons/4/41/SBT_logo_2014.svg',
-
-  record:
-    'https://upload.wikimedia.org/wikipedia/commons/2/20/Record_logo_2016.svg',
-
-  band:
-    'https://upload.wikimedia.org/wikipedia/commons/2/2b/Rede_Bandeirantes_logo_2018.svg',
-
-  redetv:
-    'https://upload.wikimedia.org/wikipedia/commons/b/b1/RedeTV%21_logo_2015.svg',
-
-  cultura:
-    'https://upload.wikimedia.org/wikipedia/commons/8/82/TV_Cultura_logo_2013.svg',
-
-  espn:
-    'https://upload.wikimedia.org/wikipedia/commons/2/2f/ESPN_wordmark.svg',
-
-  sportv:
-    'https://upload.wikimedia.org/wikipedia/commons/5/5c/SporTV_2021.svg',
-
-  premiere:
-    'https://upload.wikimedia.org/wikipedia/commons/7/72/Premiere_FC_logo.png',
-
-  cnn:
-    'https://upload.wikimedia.org/wikipedia/commons/b/b1/CNN.svg'
-}
-
-function normalizeText(text = '') {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]/g, '')
-}
-
-function getSmartLogo(name = '', logo = '') {
-  if (
-    logo &&
-    logo.startsWith('http') &&
-    !logo.includes('undefined')
-  ) {
-    return logo
-  }
-
-  const clean = normalizeText(name)
-
-  for (const key of Object.keys(LOGO_MAP)) {
-    if (clean.includes(key)) {
-      return LOGO_MAP[key]
-    }
-  }
-
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(
-    name || 'TV'
-  )}&background=0284c7&color=ffffff&size=256&bold=true`
-}
-
 function parseM3U(text) {
   const lines = text.split('\n')
   const channels = []
@@ -294,7 +185,6 @@ function parseM3U(text) {
 
   for (let line of lines) {
     line = line.trim()
-
     if (!line) continue
 
     if (line.startsWith('#EXTINF')) {
@@ -302,73 +192,20 @@ function parseM3U(text) {
       const logoMatch = line.match(/tvg-logo="([^"]*)"/)
       const groupMatch = line.match(/group-title="([^"]*)"/)
 
-      const channelName = nameMatch ? nameMatch[1].trim() : 'Canal IPTV'
-
       current = {
-        name: channelName,
-        logo: getSmartLogo(channelName, logoMatch ? logoMatch[1].trim() : ''),
+        name: nameMatch ? nameMatch[1].trim() : 'Canal IPTV',
+        logo: logoMatch ? logoMatch[1].trim() : '',
         category: groupMatch ? groupMatch[1].trim() : 'Outros'
       }
 
       continue
     }
 
-    if (
-      current &&
-      line &&
-      !line.startsWith('#') &&
-      line.startsWith('http')
-    ) {
-      const lowerName = (current.name || '').toLowerCase()
-      const lowerCategory = (current.category || '').toLowerCase()
-      const lowerUrl = line.toLowerCase()
-
-      const blocked =
-        lowerName.includes('xxx') ||
-        lowerName.includes('adult') ||
-        lowerName.includes('porn') ||
-        lowerName.includes('sex') ||
-        lowerName.includes('radio') ||
-        lowerName.includes('bet') ||
-        lowerName.includes('casino') ||
-        lowerCategory.includes('adult') ||
-        lowerCategory.includes('radio') ||
-        lowerUrl.includes('udp://') ||
-        lowerUrl.includes('rtmp://')
-
-      const allowed =
-        lowerName.includes('globo') ||
-        lowerName.includes('sbt') ||
-        lowerName.includes('record') ||
-        lowerName.includes('band') ||
-        lowerName.includes('redetv') ||
-        lowerName.includes('cultura') ||
-        lowerName.includes('sportv') ||
-        lowerName.includes('espn') ||
-        lowerName.includes('premiere') ||
-        lowerName.includes('discovery') ||
-        lowerName.includes('hbo') ||
-        lowerName.includes('telecine') ||
-        lowerName.includes('max') ||
-        lowerName.includes('warner') ||
-        lowerName.includes('paramount') ||
-        lowerName.includes('nick') ||
-        lowerName.includes('cartoon') ||
-        lowerName.includes('cnn') ||
-        lowerName.includes('history') ||
-        lowerName.includes('fox') ||
-        lowerName.includes('universal') ||
-        lowerName.includes('megapix') ||
-        lowerCategory.includes('tv aberta') ||
-        lowerCategory.includes('esportes') ||
-        lowerCategory.includes('filmes')
-
-      if (!blocked && allowed) {
-        channels.push({
-          ...current,
-          url: line
-        })
-      }
+    if (current && line.startsWith('http')) {
+      channels.push({
+        ...current,
+        url: line
+      })
 
       current = null
     }
@@ -376,415 +213,282 @@ function parseM3U(text) {
 
   return channels
 }
+
 async function importM3UFromUrl(playlistUrl) {
   const fixedUrl = normalizeGithubUrl(playlistUrl)
 
   const response = await fetch(fixedUrl, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 IPTV Panel'
+      'User-Agent': 'Mozilla/5.0 IPTV PANEL'
     }
   })
 
-  if (!response.ok) {
-    throw new Error(`Erro ao baixar M3U: ${response.status}`)
-  }
+  if (!response.ok) throw new Error('Erro ao baixar lista')
 
   const text = await response.text()
 
-  if (!text.includes('#EXTINF')) {
-    throw new Error('URL não é uma lista M3U válida')
-  }
+  if (!text.includes('#EXTINF')) throw new Error('M3U inválida')
 
   return parseM3U(text)
 }
 
-async function testStream(url) {
-  if (!url || !url.startsWith('http')) return false
-
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 IPTV Panel'
-      },
-      signal: AbortSignal.timeout(6000)
-    })
-
-    if (!response.ok) return false
-
-    const contentType = response.headers.get('content-type') || ''
-    const text = await response.text().catch(() => '')
-
-    // TESTE M3U8 REAL
-    if (url.includes('.m3u8') || text.includes('#EXTM3U')) {
-
-      if (
-        !text.includes('#EXT-X-TARGETDURATION') &&
-        !text.includes('#EXT-X-STREAM-INF') &&
-        !text.includes('#EXTINF')
-      ) {
-        return false
-      }
-
-      const lines = text
-        .split('\n')
-        .map(line => line.trim())
-        .filter(Boolean)
-
-      const segment = lines.find(line =>
-        !line.startsWith('#') &&
-        (
-          line.includes('.ts') ||
-          line.includes('.m4s') ||
-          line.includes('.m3u8')
-        )
-      )
-
-      if (!segment) return false
-
-      let segmentUrl = segment
-
-      if (!segmentUrl.startsWith('http')) {
-        const base = url.substring(0, url.lastIndexOf('/') + 1)
-        segmentUrl = base + segmentUrl
-      }
-
-      try {
-  const segmentResponse = await fetch(segmentUrl, {
-    method: 'GET',
-    headers: {
-      'User-Agent': 'Mozilla/5.0 IPTV Panel',
-      Range: 'bytes=0-2048'
-    },
-    signal: AbortSignal.timeout(8000)
-  })
-
-  if (segmentResponse.ok) {
-    return true
-  }
-} catch (err) {
-  console.log('SEGMENT TEST FAIL:', err.message)
-}
-
-// ACEITA PLAYLIST M3U8 VÁLIDA MESMO SE O SEGMENTO DEMORAR
-return true
-    }
-
-    // TESTE VIDEO DIRETO
-    if (
-      contentType.includes('video') ||
-      contentType.includes('octet-stream')
-    ) {
-      return true
-    }
-
-    return false
-
-  } catch {
-    return false
-  }
-}
-function normalizeChannelName(name = '') {
-  return name
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\b(hd|fhd|sd|4k|1080p|720p|480p)\b/g, '')
-    .replace(/\(.*?\)/g, '')
-    .replace(/[^a-z0-9]/g, '')
-    .trim()
-}
-
 async function saveChannels(channels) {
-  let saved = 0
-  let updated = 0
-  let rejected = 0
-  let reserves = 0
+  let added = 0
 
-  const uniqueMap = new Map()
-
-  channels.forEach(channel => {
-    if (
-      channel.url &&
-      channel.url.startsWith('http') &&
-      !uniqueMap.has(channel.url)
-    ) {
-      uniqueMap.set(channel.url, channel)
-    }
-  })
-
-  for (const channel of uniqueMap.values()) {
+  for (const channel of channels) {
     try {
-      const isWorking = await testStream(channel.url)
-
-      if (!isWorking) {
-        rejected++
-        continue
-      }
-
-      const normalized = normalizeChannelName(channel.name || '')
-
-      const allChannels = await pool.query(`
-  SELECT *
-  FROM channels
-`)
-
-const existingChannel = allChannels.rows.find(item => {
-  return normalizeChannelName(item.name || '') === normalized
-})
-
-const existing = {
-  rows: existingChannel ? [existingChannel] : []
-}
-
-      if (existing.rows.length > 0) {
-        const mainChannel = existing.rows[0]
-
-        await pool.query(
-          `
-          INSERT INTO channel_streams
-          (channel_id, name, url, source, quality, is_online, health_score, success_count, last_checked)
-          VALUES ($1,$2,$3,$4,$5,true,70,1,NOW())
-          ON CONFLICT (url)
-          DO UPDATE SET
-            is_online = true,
-            health_score = LEAST(100, channel_streams.health_score + 10),
-            success_count = channel_streams.success_count + 1,
-            last_checked = NOW()
-          `,
-          [
-            mainChannel.id,
-            channel.name || mainChannel.name,
-            channel.url,
-            channel.category || 'Fonte IPTV',
-            detectQuality(channel.name || ''),
-          ]
-        )
-
-        reserves++
-        continue
-      }
-
       const result = await pool.query(
         `
-        INSERT INTO channels (name, url, category, logo, is_online, offline_count, last_checked, health_score, success_count, fail_count)
-        VALUES ($1,$2,$3,$4,true,0,NOW(),70,1,0)
+        INSERT INTO channels
+        (
+          name,
+          url,
+          category,
+          logo,
+          is_online
+        )
+        VALUES ($1,$2,$3,$4,true)
         ON CONFLICT (url)
-        DO UPDATE SET
-          name = EXCLUDED.name,
-          category = EXCLUDED.category,
-          logo = EXCLUDED.logo,
-          is_online = true,
-          offline_count = 0,
-          health_score = LEAST(100, channels.health_score + 10),
-          success_count = channels.success_count + 1,
-          last_checked = NOW()
-        RETURNING xmax
+        DO NOTHING
+        RETURNING id
         `,
         [
-          channel.name || 'Canal IPTV',
+          channel.name,
           channel.url,
-          channel.category || 'Outros',
-          channel.logo || ''
+          channel.category,
+          channel.logo
         ]
       )
 
-      if (result.rows[0].xmax === '0') saved++
-      else updated++
+      if (result.rows.length > 0) added++
     } catch (err) {
-      rejected++
-      console.log('ERRO AO TESTAR/SALVAR CANAL:', err.message)
+      console.log(err.message)
     }
   }
 
-  return {
-    saved,
-    updated,
-    rejected,
-    reserves,
-    total: uniqueMap.size
-  }
+  return added
 }
 
-function detectQuality(name = '') {
-  const text = name.toLowerCase()
-
-  if (text.includes('4k')) return '4K'
-  if (text.includes('fhd') || text.includes('1080')) return 'FHD'
-  if (text.includes('hd') || text.includes('720')) return 'HD'
-  if (text.includes('sd') || text.includes('480')) return 'SD'
-
-  return 'AUTO'
-}async function ensureProfiles(userId) {
-  const result = await pool.query(
-    'SELECT * FROM profiles WHERE user_id = $1',
-    [userId]
-  )
-
-  if (result.rows.length > 0) return
-
-  await pool.query(
-    `
-    INSERT INTO profiles (user_id, name, avatar, color, is_kids)
-    VALUES
-    ($1, 'Cinema', '🎬', '#ef4444', false),
-    ($1, 'Esportes', '⚽', '#22c55e', false),
-    ($1, 'Kids', '🧸', '#facc15', true),
-    ($1, 'Gamer', '🎮', '#38bdf8', false)
-    `,
-    [userId]
-  )
+function cleanTitle(title = '') {
+  return title
+    .replace(/\[.*?\]/g, '')
+    .replace(/\(.*?\)/g, '')
+    .replace(/\b(1080p|720p|480p|4k|fhd|hd|sd|dub|dublado|legendado)\b/gi, '')
+    .replace(/\|.*$/g, '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
-async function githubAutoDiscovery() {
-  const discovered = []
+function isBadMovieItem(movie) {
+  const title = (movie.title || '').toLowerCase()
+  const category = (movie.category || '').toLowerCase()
+  const image = (movie.image || '').toLowerCase()
+  const video = (movie.video || '').toLowerCase()
 
-  const iptvOrgStreams = [
-    'br.m3u',
-    'pt.m3u',
-    'us.m3u',
-    'uk.m3u',
-    'int.m3u'
+  const badWords = [
+  'tv',
+  'channel',
+  'canal',
+  'live',
+  'ao vivo',
+  '24h',
+  '24/7',
+  'news',
+  'sports',
+  'sport',
+  'music',
+  'radio',
+  'record',
+  'globo',
+  'sbt',
+  'band',
+  'cnn',
+  'fox',
+  'pbs',
+  'nbc',
+  'abc',
+  'cbs',
+  'pluto',
+  'rakuten',
+  'vix',
+  'plex',
+  'free tv',
+  'iptv',
+  'vo',
+    'ivs',
+    'test',
+    'teste',
+    'demo',
+    'backup',
+    'channel',
+    'canal',
+    'news',
+    'sport',
+    'sports',
+    'music',
+    'radio',
+    'live',
+    'ao vivo',
+    '24/7',
+    'camera',
+    'webcam',
+    'xxx',
+    'adult',
+    'porn'
   ]
 
-  for (const file of iptvOrgStreams) {
-    discovered.push({
-      name: `GitHub Auto ${file}`,
-      url: `https://raw.githubusercontent.com/iptv-org/iptv/master/streams/${file}`
-    })
-  }
+  const blockedWords = [
+'cine',
+'cinema',
+'vision',
+'drama',
+'novela',
+'documentary',
+'documentario',
+'telecine',
+'paramount',
+'rakuten',
+'pluto',
+'runtime',
+'freecine',
+'record tv',
+'tv record',
+'world tv',
+'canal tv',
+'vision tv',
+'crime tv',
+'music tv',
+'news tv',
+'prime tv',
+'family tv',
+'kids tv',
+'fashion tv',
+'travel tv',
+'comedy tv',
+'series tv',
+'movie tv',
+'filmes tv',
+'series premium',
+'filmes premium',
+'epg',
+'vod',
+'vod tv',
+'arab',,
+    'al ',
+    'quran',
+    'islam',
+    'urdu',
+    'hindi',
+    'bangla',
+    'turk',
+    'russia',
+    'russian',
+    'kurd',
+    'pakistan',
+    'india',
+    'indonesia',
+    'africa',
+    'persian',
+    'punjabi',
+    'tamil',
+    'telugu',
+    'marathi',
+    'bengali',
+    'egypt',
+    'kuwait',
+    'saudi',
+    'muslim',
+    'koran',
+    'mosque',
+    'tv5monde',
+    'france 24',
+    'sharia',
+    'quran tv',
+    'alquran',
+    'islamic',
+    'aljazeera',
+    'makkah',
+    'madinah'
+  ]
 
-  for (const source of discovered) {
-    await pool.query(
-      `
-      INSERT INTO m3u_sources (name, url, active, source_type)
-      VALUES ($1,$2,true,'github_auto')
-      ON CONFLICT (url)
-      DO UPDATE SET
-        name = EXCLUDED.name,
-        active = true,
-        source_type = 'github_auto'
-      `,
-      [source.name, source.url]
+  const badExact =
+    title === 'vo' ||
+    title === 'vod' ||
+    title === 'tv' ||
+    title === 'hd' ||
+    title === 'fhd' ||
+    title === '4k' ||
+    title.length <= 2
+
+  const badTitle =
+    badWords.some(word =>
+      title.includes(word)
     )
-  }
 
-  return discovered.length
-}
+  const blockedLanguage =
+    blockedWords.some(word =>
+      title.includes(word)
+    )
 
-async function importAllSources() {
-  const sources = await pool.query(
-    'SELECT * FROM m3u_sources WHERE active = true ORDER BY id DESC'
+  const badImage =
+    !image ||
+    image.includes('ui-avatars') ||
+    image.includes('placeholder') ||
+    image.includes('no-image') ||
+    image.includes('undefined')
+
+  const badCategory =
+    category.includes('news') ||
+    category.includes('sports') ||
+    category.includes('radio') ||
+    category.includes('music') ||
+    category.includes('live')
+
+  const badVideo =
+    !video ||
+    video.includes('udp://') ||
+    video.includes('rtmp://')
+
+  return (
+    badExact ||
+    badTitle ||
+    blockedLanguage ||
+    badImage ||
+    badCategory ||
+    badVideo
   )
-
-  let totalFound = 0
-  let totalSaved = 0
-  let totalUpdated = 0
-  let totalSources = sources.rows.length
-
-  for (const source of sources.rows) {
-    try {
-      console.log('AUTO IMPORT:', source.url)
-
-      const parsed = await importM3UFromUrl(source.url)
-
-      totalFound += parsed.length
-
-      const result = await saveChannels(parsed)
-
-      totalSaved += result.saved
-      totalUpdated += result.updated
-
-      await pool.query(
-        'UPDATE m3u_sources SET last_import = NOW() WHERE id = $1',
-        [source.id]
-      )
-    } catch (err) {
-      console.log('ERRO AUTO SOURCE:', err.message)
-    }
-  }
-
-  return {
-    sources: totalSources,
-    found: totalFound,
-    saved: totalSaved,
-    updated: totalUpdated
-  }
-}
-
-async function checkAndRemoveOffline() {
-  const result = await pool.query(
-    'SELECT * FROM channels ORDER BY last_checked NULLS FIRST, id DESC LIMIT 300'
-  )
-
-  let online = 0
-  let offline = 0
-  let removed = 0
-
-  for (const channel of result.rows) {
-    const ok = await testStream(channel.url)
-
-    if (ok) {
-      online++
-
-      await pool.query(
-        `
-        UPDATE channels
-        SET is_online = true, offline_count = 0, last_checked = NOW()
-        WHERE id = $1
-        `,
-        [channel.id]
-      )
-    } else {
-      offline++
-
-      const offlineCount = Number(channel.offline_count || 0) + 1
-
-      if (offlineCount >= 3) {
-        await pool.query(
-          'DELETE FROM channels WHERE id = $1',
-          [channel.id]
-        )
-
-        removed++
-      } else {
-        await pool.query(
-          `
-          UPDATE channels
-          SET is_online = false, offline_count = $1, last_checked = NOW()
-          WHERE id = $2
-          `,
-          [offlineCount, channel.id]
-        )
-      }
-    }
-  }
-
-  return { online, offline, removed }
 }
 
 app.post('/register', async (req, res) => {
   try {
     const { name, email, password } = req.body
 
-    if (!email || !password) {
-      return res.status(400).json({ error: 'email e senha obrigatórios' })
-    }
-
-    const result = await pool.query(
-      'INSERT INTO users (name, email, password) VALUES ($1,$2,$3) RETURNING id, name, email',
-      [name || 'User', email, password]
+    await pool.query(
+      `
+      INSERT INTO users
+      (
+        name,
+        email,
+        password,
+        role,
+        status,
+        plan,
+        max_connections,
+        expires_at
+      )
+      VALUES ($1,$2,$3,'client','active','free',1)
+      `,
+      [
+        name,
+        email,
+        password
+      ]
     )
 
-    await ensureProfiles(result.rows[0].id)
-
-    res.json({ message: 'Conta criada com sucesso' })
+    res.json({ success: true })
   } catch (err) {
-    if (err.code === '23505') {
-      return res.status(400).json({ error: 'email já cadastrado' })
-    }
-
-    console.log('ERRO REGISTER:', err)
+    console.log(err)
     res.status(500).json({ error: 'erro ao criar conta' })
   }
 })
@@ -794,8 +498,12 @@ app.post('/login', async (req, res) => {
     const { email, password } = req.body
 
     const result = await pool.query(
-      'SELECT * FROM users WHERE email = $1 AND password = $2',
-      [email, password]
+      `
+      SELECT *
+      FROM users
+      WHERE email = $1
+      `,
+      [email]
     )
 
     if (result.rows.length === 0) {
@@ -804,1011 +512,735 @@ app.post('/login', async (req, res) => {
 
     const user = result.rows[0]
 
-    await ensureProfiles(user.id)
+    if (user.password !== password) {
+      return res.status(401).json({ error: 'senha inválida' })
+    }
+
+    if (user.status && user.status !== 'active') {
+      return res.status(403).json({ error: 'conta bloqueada' })
+    }
+
+    if (user.expires_at && new Date(user.expires_at) < new Date()) {
+      return res.status(403).json({ error: 'login expirado' })
+    }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email },
+      {
+        id: user.id,
+        email: user.email,
+        role: user.role
+      },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      {
+        expiresIn: '7d'
+      }
     )
 
     res.json({
       token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email
-      }
+      user
     })
   } catch (err) {
-    console.log('ERRO LOGIN:', err)
-    res.status(500).json({ error: 'erro no login' })
+    console.log(err)
+    res.status(500).json({ error: 'erro login' })
   }
 })
 
-app.get('/profiles', auth, async (req, res) => {
+app.get('/admin/users', auth, adminOnly, async (req, res) => {
   try {
-    await ensureProfiles(req.user.id)
-
-    const result = await pool.query(
-      'SELECT * FROM profiles WHERE user_id = $1 ORDER BY id ASC',
-      [req.user.id]
-    )
+    const result = await pool.query(`
+      SELECT
+        id,
+        name,
+        email,
+        role,
+        status,
+        plan,
+        max_connections,
+        expires_at,
+        credits
+      FROM users
+      ORDER BY id DESC
+    `)
 
     res.json(result.rows)
   } catch (err) {
-    console.log('ERRO PROFILES:', err)
-    res.status(500).json({ error: 'erro ao buscar perfis' })
+    console.log(err)
+
+    res.status(500).json({
+      error: 'erro ao buscar usuarios'
+    })
+  }
+})
+
+app.patch('/admin/users/:id', auth, adminOnly, async (req, res) => {
+  try {
+    const { role, status, plan, max_connections, expires_at, credits } = req.body
+    const { id } = req.params
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET
+        role = COALESCE($1, role),
+        status = COALESCE($2, status),
+        plan = COALESCE($3, plan),
+        max_connections = COALESCE($4, max_connections),
+        expires_at = COALESCE($5, expires_at),
+        credits = COALESCE($6, credits)
+      WHERE id = $7
+      RETURNING id, name, email, role, status, plan, max_connections, expires_at, credits
+      `,
+      [
+        role,
+        status,
+        plan,
+        max_connections,
+        expires_at,
+        credits,
+        id
+      ]
+    )
+
+    res.json(result.rows[0])
+  } catch (err) {
+    console.log(err)
+    res.status(500).json({ error: 'erro ao atualizar usuário' })
+  }
+})
+
+app.patch('/admin/users/:id/add-30-days', auth, adminOnly, async (req, res) => {
+  try {
+    const { id } = req.params
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET expires_at =
+        CASE
+          WHEN expires_at IS NULL OR expires_at < NOW()
+          THEN NOW() + INTERVAL '30 days'
+          ELSE expires_at + INTERVAL '30 days'
+        END
+      WHERE id = $1
+      RETURNING id, name, email, expires_at
+      `,
+      [id]
+    )
+
+    res.json(result.rows[0])
+  } catch (err) {
+    console.log(err)
+    res.status(500).json({ error: 'erro ao adicionar 30 dias' })
+  }
+})
+
+app.get('/admin/credits', auth, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT credits
+      FROM users
+      WHERE id = $1
+      `,
+      [req.user.id]
+    )
+
+    res.json({
+      credits: result.rows[0]?.credits || 0
+    })
+  } catch (err) {
+    console.log(err)
+    res.status(500).json({ error: 'erro ao buscar créditos' })
+  }
+})
+
+app.post('/admin/credits/add', auth, adminOnly, async (req, res) => {
+  try {
+    const { amount } = req.body
+
+    const value = Number(amount || 0)
+
+    if (value <= 0) {
+      return res.status(400).json({ error: 'quantidade inválida' })
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET credits = credits + $1
+      WHERE id = $2
+      RETURNING credits
+      `,
+      [
+        value,
+        req.user.id
+      ]
+    )
+
+    res.json({
+      credits: result.rows[0].credits
+    })
+  } catch (err) {
+    console.log(err)
+    res.status(500).json({ error: 'erro ao adicionar créditos' })
+  }
+})
+
+app.post('/admin/users/create-random', auth, adminOnly, async (req, res) => {
+  try {
+    const admin = await pool.query(
+      `
+      SELECT credits
+      FROM users
+      WHERE id = $1
+      `,
+      [req.user.id]
+    )
+
+    const credits = Number(admin.rows[0]?.credits || 0)
+
+    if (credits <= 0) {
+      return res.status(400).json({
+        error: 'sem créditos disponíveis'
+      })
+    }
+
+    const login = generateRandomLogin()
+
+    const result = await pool.query(
+      `
+      INSERT INTO users
+      (
+        name,
+        email,
+        password,
+        role,
+        status,
+        plan,
+        max_connections,
+        expires_at
+      )
+      VALUES ($1,$2,$3,'client','active','premium',1,NOW() + INTERVAL '30 days')
+      RETURNING id, name, email, role, status, plan, max_connections, expires_at
+      `,
+      [
+        login.name,
+        login.email,
+        login.password
+      ]
+    )
+
+    await pool.query(
+      `
+      UPDATE users
+      SET credits = credits - 1
+      WHERE id = $1
+      `,
+      [req.user.id]
+    )
+
+    res.json({
+      success: true,
+      user: result.rows[0],
+      login: {
+        email: login.email,
+        password: login.password
+      }
+    })
+  } catch (err) {
+    console.log('ERRO CREATE RANDOM:', err)
+
+    res.status(500).json({
+      error: err.message || 'erro ao criar login aleatório'
+    })
+  }
+})
+
+app.delete('/admin/users/:id', auth, adminOnly, async (req, res) => {
+  try {
+    const { id } = req.params
+
+    if (Number(id) === Number(req.user.id)) {
+      return res.status(400).json({
+        error: 'não pode excluir o próprio admin'
+      })
+    }
+
+    await pool.query(
+      `
+      DELETE FROM users
+      WHERE id = $1
+      `,
+      [id]
+    )
+
+    res.json({
+      success: true
+    })
+  } catch (err) {
+    console.log(err)
+    res.status(500).json({
+      error: 'erro ao excluir usuário'
+    })
+  }
+})
+app.get('/me', auth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM users
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [req.user.id]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({
+        error: 'usuario nao encontrado'
+      })
+    }
+
+    const user = result.rows[0]
+
+    console.log('VALIDANDO USUARIO:')
+    console.log(user.email)
+    console.log('STATUS:', user.status)
+    console.log('EXPIRES:', user.expires_at)
+
+    if (String(user.status).trim() !== 'active') {
+      return res.status(403).json({
+        error: 'usuario bloqueado'
+      })
+    }
+
+    if (
+      user.expires_at &&
+      new Date(user.expires_at).getTime() < Date.now()
+    ) {
+      return res.status(403).json({
+        error: 'assinatura vencida'
+      })
+    }
+
+    res.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      plan: user.plan,
+      max_connections: user.max_connections,
+      expires_at: user.expires_at,
+      credits: user.credits
+    })
+  } catch (err) {
+    console.log(err)
+
+    res.status(500).json({
+      error: 'erro usuario'
+    })
   }
 })
 
 app.get('/channels', auth, async (req, res) => {
   try {
-
-    const limit = Math.min(Number(req.query.limit || 800), 1000)
-    const offset = Number(req.query.offset || 0)
-    const search = req.query.search || ''
-    const category = req.query.category || ''
-
-    let query = `
-      SELECT
-        c.*,
-        COALESCE(s.reserve_count, 0) AS reserve_count
-      FROM channels c
-      LEFT JOIN (
-        SELECT
-          channel_id,
-          COUNT(*) AS reserve_count
-        FROM channel_streams
-        WHERE is_online = true
-        GROUP BY channel_id
-      ) s ON s.channel_id = c.id
-      WHERE 1=1
-    `
-
-    const params = []
-
-    if (search) {
-      params.push(`%${search}%`)
-      query += ` AND c.name ILIKE $${params.length}`
-    }
-
-    if (category) {
-      params.push(category)
-      query += ` AND c.category = $${params.length}`
-    }
-
-    params.push(limit)
-
-    query += `
-      ORDER BY
-        CASE
-          WHEN c.category ILIKE '%TV Aberta%' THEN 1
-          WHEN c.category ILIKE '%Esportes%' THEN 2
-          WHEN c.category ILIKE '%Filmes%' THEN 3
-          WHEN c.category ILIKE '%Infantil%' THEN 4
-          WHEN c.category ILIKE '%Notícias%' THEN 5
-          ELSE 9
-        END,
-        c.is_online DESC,
-        c.health_score DESC,
-        c.success_count DESC,
-        c.id DESC
-      LIMIT $${params.length}
-    `
-
-    params.push(offset)
-
-    query += ` OFFSET $${params.length}`
-
-    const result = await pool.query(query, params)
+    const result = await pool.query(`
+      SELECT *
+      FROM channels
+      ORDER BY name ASC
+    `)
 
     res.json(result.rows)
-
   } catch (err) {
-
-    console.log('ERRO GET CHANNELS:', err)
-
-    res.status(500).json({
-      error: 'erro ao buscar canais'
-    })
-
+    console.log(err)
+    res.status(500).json({ error: 'erro canais' })
   }
 })
+
 app.post('/channels', auth, async (req, res) => {
   try {
     const { name, url, category, logo } = req.body
 
-    if (!name || !url) {
-      return res.status(400).json({ error: 'nome e url obrigatórios' })
-    }
-
-    await saveChannels([
-      {
+    await pool.query(
+      `
+      INSERT INTO channels
+      (
         name,
         url,
-        category: category || 'Outros',
-        logo: logo || ''
-      }
-    ])
+        category,
+        logo,
+        is_online
+      )
+      VALUES ($1,$2,$3,$4,true)
+      ON CONFLICT (url)
+      DO NOTHING
+      `,
+      [
+        name,
+        url,
+        category,
+        logo
+      ]
+    )
 
-    res.json({ message: 'Canal adicionado' })
+    res.json({ success: true })
   } catch (err) {
-    console.log('ERRO ADD CHANNEL:', err)
+    console.log(err)
     res.status(500).json({ error: 'erro ao adicionar canal' })
   }
 })
 
 app.delete('/channels/:id', auth, async (req, res) => {
   try {
-    await pool.query('DELETE FROM channels WHERE id = $1', [req.params.id])
-    res.json({ message: 'Canal excluído' })
+    await pool.query(
+      `
+      DELETE FROM channels
+      WHERE id = $1
+      `,
+      [req.params.id]
+    )
+
+    res.json({ success: true })
   } catch (err) {
-    console.log('ERRO DELETE CHANNEL:', err)
-    res.status(500).json({ error: 'erro ao excluir canal' })
+    console.log(err)
+    res.status(500).json({ error: 'erro ao remover canal' })
   }
 })
 
 app.post('/import-m3u', auth, async (req, res) => {
   try {
-    const urls = req.body.urls || [req.body.url]
+    const { url } = req.body
 
-    if (!urls || !urls[0]) {
-      return res.status(400).json({ error: 'URL M3U obrigatória' })
+    if (!url) {
+      return res.status(400).json({ error: 'url obrigatória' })
     }
 
-    let allChannels = []
-
-    for (const playlistUrl of urls) {
-      try {
-        const parsed = await importM3UFromUrl(playlistUrl)
-        allChannels = [...allChannels, ...parsed]
-      } catch (err) {
-        console.log('ERRO FONTE M3U:', err.message)
-      }
-    }
-
-    const result = await saveChannels(allChannels)
+    const channels = await importM3UFromUrl(url)
+    const added = await saveChannels(channels)
 
     res.json({
-      message: `Importação concluída. ${result.saved} novos. ${result.updated} atualizados.`,
-      encontrados: allChannels.length,
-      unicos: result.total,
-      novos: result.saved,
-      atualizados: result.updated
+      success: true,
+      encontrados: channels.length,
+      adicionados: added
     })
   } catch (err) {
-    console.log('ERRO IMPORT M3U:', err)
+    console.log(err)
     res.status(500).json({ error: 'erro ao importar M3U' })
   }
 })
 
-app.post('/sources', auth, async (req, res) => {
+app.get('/movies', auth, async (req, res) => {
   try {
-    const { name, url } = req.body
-
-    if (!name || !url) {
-      return res.status(400).json({ error: 'nome e url obrigatórios' })
-    }
-
-    const fixedUrl = normalizeGithubUrl(url)
-
-    await pool.query(
-      `
-      INSERT INTO m3u_sources (name, url, active, source_type)
-      VALUES ($1,$2,true,'manual')
-      ON CONFLICT (url)
-      DO UPDATE SET name = EXCLUDED.name, active = true
-      `,
-      [name, fixedUrl]
-    )
-
-    res.json({ message: 'Fonte M3U salva' })
-  } catch (err) {
-    console.log('ERRO ADD SOURCE:', err)
-    res.status(500).json({ error: 'erro ao salvar fonte' })
-  }
-})
-
-app.get('/sources', auth, async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT * FROM m3u_sources ORDER BY id DESC'
-    )
+    const result = await pool.query(`
+      SELECT *
+      FROM movies
+      ORDER BY id DESC
+    `)
 
     res.json(result.rows)
   } catch (err) {
-    console.log('ERRO GET SOURCES:', err)
-    res.status(500).json({ error: 'erro ao buscar fontes' })
+    console.log(err)
+    res.status(500).json({ error: 'erro filmes' })
   }
 })
 
-app.post('/github/scan', auth, async (req, res) => {
+app.post('/movies', auth, adminOnly, async (req, res) => {
   try {
-    const found = await githubAutoDiscovery()
+    const { title, year, category, image, banner, video, description } = req.body
 
-    res.json({
-      message: `Busca GitHub concluída. ${found} fontes automáticas salvas.`,
-      found
-    })
+    if (!title || !video) {
+      return res.status(400).json({ error: 'titulo e video obrigatorios' })
+    }
+
+    await pool.query(
+      `
+      INSERT INTO movies
+      (
+        title,
+        year,
+        category,
+        image,
+        banner,
+        video,
+        description
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7)
+      `,
+      [
+        title,
+        year || '',
+        category || 'Filmes',
+        image || '',
+        banner || '',
+        video,
+        description || ''
+      ]
+    )
+
+    res.json({ success: true })
   } catch (err) {
-    console.log('ERRO GITHUB SCAN:', err)
-    res.status(500).json({ error: 'erro na busca GitHub' })
+    console.log(err)
+    res.status(500).json({ error: 'erro criar filme' })
   }
 })
 
-app.post('/sources/import-all', auth, async (req, res) => {
+app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
   try {
-    const result = await importAllSources()
+    const { url, type } = req.body
 
-    res.json({
-      message: `Atualização concluída. ${result.saved} novos. ${result.updated} atualizados.`,
-      ...result
+    if (!url) {
+      return res.status(400).json({ error: 'url obrigatória' })
+    }
+
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 IPTV PANEL'
+      }
     })
-  } catch (err) {
-    console.log('ERRO IMPORT ALL:', err)
-    res.status(500).json({ error: 'erro ao atualizar fontes' })
-  }
-})
 
-app.post('/channels/check-online', auth, async (req, res) => {
-  try {
+    if (!response.ok) {
+      return res.status(400).json({ error: 'nao foi possivel abrir lista' })
+    }
 
-    const result = await pool.query(`
-      SELECT id, url
-      FROM channels
-      ORDER BY RANDOM()
-      LIMIT 200
-    `)
+    const text = await response.text()
 
-    let online = 0
-    let offline = 0
+    if (!text.includes('#EXTINF')) {
+      return res.status(400).json({ error: 'm3u invalida' })
+    }
 
-    for (const channel of result.rows) {
+    const lines = text.split('\n')
 
-      let isOnline = false
+    let current = null
+    let added = 0
+    let skipped = 0
 
-      try {
+    for (const lineRaw of lines) {
+      const line = lineRaw.trim()
 
-        if (!channel.url) {
-          isOnline = false
+      if (!line) continue
+
+      if (line.startsWith('#EXTINF')) {
+        const titleMatch = line.match(/,(.*)$/)
+        const logoMatch = line.match(/tvg-logo="([^"]*)"/)
+        const groupMatch = line.match(/group-title="([^"]*)"/)
+
+        let title = titleMatch ? titleMatch[1].trim() : 'VOD'
+
+        title = cleanTitle(title)
+
+        const group = groupMatch ? groupMatch[1].toLowerCase() : ''
+
+        const isSeries =
+          type === 'Series' ||
+          /s\d{1,2}e\d{1,2}/i.test(title) ||
+          group.includes('series') ||
+          group.includes('séries')
+
+        const isMovie =
+          type === 'Filmes' ||
+          group.includes('movie') ||
+          group.includes('movies') ||
+          group.includes('filme') ||
+          group.includes('filmes') ||
+          group.includes('vod')
+
+        const fakeMovie = {
+          title,
+          category: isSeries ? 'Series' : 'Filmes',
+          image: logoMatch ? logoMatch[1] : '',
+          video: ''
         }
 
-        else if (
-          channel.url.includes('.m3u8') ||
-          channel.url.includes('.mpd')
-        ) {
-
-          const response = await fetch(channel.url, {
-            method: 'GET',
-            headers: {
-              'User-Agent': 'Mozilla/5.0 IPTV PANEL'
-            },
-            signal: AbortSignal.timeout(3000)
-          })
-
-          if (response.ok) {
-
-            const text = await response.text()
-
-            if (
-              text.includes('#EXTM3U') ||
-              text.includes('#EXTINF') ||
-              text.includes('#EXT-X-STREAM-INF') ||
-              text.includes('#EXT-X-TARGETDURATION')
-            ) {
-              isOnline = true
-            }
-
-          }
-
-        } else {
-
-          const response = await fetch(channel.url, {
-            method: 'HEAD',
-            signal: AbortSignal.timeout(5000)
-          })
-
-          isOnline = response.ok
+        if (!isMovie && !isSeries) {
+          current = null
+          skipped++
+          continue
         }
 
-      } catch (err) {
-        isOnline = false
+        const tmdb = await fetchTMDBPoster(title)
+
+        current = {
+          title,
+          image: tmdb?.poster || (logoMatch ? logoMatch[1] : ''),
+          banner: tmdb?.banner || (logoMatch ? logoMatch[1] : ''),
+          description: tmdb?.overview || 'Importado IPTV',
+          year: tmdb?.year || '',
+          category: isSeries ? 'Series' : 'Filmes'
+        }
+
+        continue
       }
 
-      if (isOnline) {
-  await pool.query(`
-    UPDATE channels
-    SET
-      is_online = true,
-      success_count = success_count + 1,
-      health_score = LEAST(100, health_score + 10),
-      last_checked = NOW()
-    WHERE id = $1
-  `, [channel.id])
+      if (current && line.startsWith('http')) {
+        try {
+          const exists = await pool.query(
+            `
+            SELECT id
+            FROM movies
+            WHERE video = $1
+            OR LOWER(title) = LOWER($2)
+            LIMIT 1
+            `,
+            [
+              line,
+              current.title
+            ]
+          )
 
-  online++
-} else {
-  await pool.query(`
-    UPDATE channels
-    SET
-      is_online = false,
-      fail_count = fail_count + 1,
-      health_score = GREATEST(0, health_score - 20),
-      last_checked = NOW()
-    WHERE id = $1
-  `, [channel.id])
+          if (exists.rows.length > 0) {
+            skipped++
+            current = null
+            continue
+          }
 
-  offline++
-}
+          await pool.query(
+            `
+            INSERT INTO movies
+            (
+              title,
+              year,
+              category,
+              image,
+              banner,
+              video,
+              description
+            )
+            VALUES ($1,$2,$3,$4,$5,$6,$7)
+            `,
+            [
+              current.title,
+              current.year,
+              current.category,
+              current.image,
+              current.banner,
+              line,
+              current.description
+            ]
+          )
 
+          added++
+        } catch (err) {
+          skipped++
+          console.log(err.message)
+        }
+
+        current = null
+      }
     }
 
     res.json({
       success: true,
-      online,
-      offline
+      added,
+      skipped
     })
-
   } catch (err) {
-
-    console.log('CHECK ONLINE ERROR:', err)
-
-    res.status(500).json({
-      error: 'erro ao verificar canais'
-    })
-
+    console.log(err)
+    res.status(500).json({ error: 'erro importar filmes' })
   }
 })
-app.delete('/channels/offline/remove', auth, async (req, res) => {
+
+app.delete('/movies/clean-bad', auth, adminOnly, async (req, res) => {
   try {
     const result = await pool.query(`
-  DELETE FROM channels
-  WHERE is_online = false
-  AND name NOT ILIKE '%globo%'
-  AND name NOT ILIKE '%viva%'
-  AND name NOT ILIKE '%sbt%'
-  AND name NOT ILIKE '%record%'
-  AND name NOT ILIKE '%band%'
-  RETURNING id
-`)
+      SELECT *
+      FROM movies
+      ORDER BY id ASC
+    `)
 
-    res.json({
-      message: `${result.rows.length} canais offline removidos.`,
-      removed: result.rows.length
-    })
-  } catch (err) {
-    console.log('ERRO REMOVE OFFLINE:', err)
-    res.status(500).json({ error: 'erro ao remover offline' })
-  }
-})
+    const movies = result.rows
+    const idsToDelete = []
+    const seenTitles = new Set()
 
-app.post('/favorites', auth, async (req, res) => {
-  try {
-    const { profileId, channelId } = req.body
+    for (const movie of movies) {
+      const titleKey = (movie.title || '').toLowerCase().trim()
+      const isDuplicate = seenTitles.has(titleKey)
 
-    await pool.query(
-      `
-      INSERT INTO favorites (user_id, profile_id, channel_id)
-      VALUES ($1,$2,$3)
-      ON CONFLICT (profile_id, channel_id) DO NOTHING
-      `,
-      [req.user.id, profileId, channelId]
-    )
+      if (titleKey) {
+        seenTitles.add(titleKey)
+      }
 
-    res.json({ message: 'Favorito salvo' })
-  } catch (err) {
-    console.log('ERRO FAVORITE:', err)
-    res.status(500).json({ error: 'erro ao salvar favorito' })
-  }
-})
-
-app.delete('/favorites', auth, async (req, res) => {
-  try {
-    const { profileId, channelId } = req.body
-
-    await pool.query(
-      'DELETE FROM favorites WHERE profile_id = $1 AND channel_id = $2',
-      [profileId, channelId]
-    )
-
-    res.json({ message: 'Favorito removido' })
-  } catch (err) {
-    console.log('ERRO REMOVE FAVORITE:', err)
-    res.status(500).json({ error: 'erro ao remover favorito' })
-  }
-})
-
-app.get('/favorites/:profileId', auth, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `
-      SELECT c.*
-      FROM favorites f
-      JOIN channels c ON c.id = f.channel_id
-      WHERE f.profile_id = $1
-      ORDER BY f.created_at DESC
-      `,
-      [req.params.profileId]
-    )
-
-    res.json(result.rows)
-  } catch (err) {
-    console.log('ERRO GET FAVORITES:', err)
-    res.status(500).json({ error: 'erro ao buscar favoritos' })
-  }
-})
-
-app.post('/history', auth, async (req, res) => {
-  try {
-    const { profileId, channelId, progress, watchedSeconds } = req.body
-
-    await pool.query(
-      `
-      INSERT INTO watch_history
-      (user_id, profile_id, channel_id, progress, watched_seconds, updated_at)
-      VALUES ($1,$2,$3,$4,$5,NOW())
-      ON CONFLICT (profile_id, channel_id)
-      DO UPDATE SET
-        progress = EXCLUDED.progress,
-        watched_seconds = EXCLUDED.watched_seconds,
-        updated_at = NOW()
-      `,
-      [req.user.id, profileId, channelId, progress || 0, watchedSeconds || 0]
-    )
-
-    res.json({ message: 'Histórico salvo' })
-  } catch (err) {
-    console.log('ERRO HISTORY:', err)
-    res.status(500).json({ error: 'erro ao salvar histórico' })
-  }
-})
-
-app.get('/history/:profileId', auth, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `
-      SELECT c.*, h.progress, h.watched_seconds, h.updated_at
-      FROM watch_history h
-      JOIN channels c ON c.id = h.channel_id
-      WHERE h.profile_id = $1
-      ORDER BY h.updated_at DESC
-      LIMIT 20
-      `,
-      [req.params.profileId]
-    )
-
-    res.json(result.rows)
-  } catch (err) {
-    console.log('ERRO GET HISTORY:', err)
-    res.status(500).json({ error: 'erro ao buscar histórico' })
-  }
-})
-
-app.get('/recommendations/:profileId', auth, async (req, res) => {
-  try {
-    const history = await pool.query(
-      `
-      SELECT c.category
-      FROM watch_history h
-      JOIN channels c ON c.id = h.channel_id
-      WHERE h.profile_id = $1
-      ORDER BY h.updated_at DESC
-      LIMIT 5
-      `,
-      [req.params.profileId]
-    )
-
-    const categories = history.rows.map(row => row.category)
-
-    if (categories.length === 0) {
-      const channels = await pool.query(
-        'SELECT * FROM channels WHERE is_online = true ORDER BY id DESC LIMIT 20'
-      )
-
-      return res.json(channels.rows)
+      if (isDuplicate || isBadMovieItem(movie)) {
+        idsToDelete.push(movie.id)
+      }
     }
 
-    const channels = await pool.query(
-      `
-      SELECT *
-      FROM channels
-      WHERE category = ANY($1)
-      AND is_online = true
-      ORDER BY id DESC
-      LIMIT 20
-      `,
-      [categories]
-    )
+    if (idsToDelete.length > 0) {
+      await pool.query(
+        `
+        DELETE FROM movies
+        WHERE id = ANY($1::int[])
+        `,
+        [idsToDelete]
+      )
+    }
 
-    res.json(channels.rows)
+    res.json({
+      success: true,
+      removed: idsToDelete.length,
+      total: movies.length
+    })
   } catch (err) {
-    console.log('ERRO RECOMMENDATIONS:', err)
-    res.status(500).json({ error: 'erro ao gerar recomendações' })
+    console.log('ERRO CLEAN BAD:', err)
+    res.status(500).json({ error: 'erro ao limpar lixo' })
   }
 })
 
-async function fullAutoIPTV() {
+app.delete('/movies/:id', auth, adminOnly, async (req, res) => {
   try {
-    console.log('AUTO IPTV: INICIANDO')
+    await pool.query(
+      `
+      DELETE FROM movies
+      WHERE id = $1
+      `,
+      [req.params.id]
+    )
 
-    // await githubAutoDiscovery()
-
-    const imported = await importAllSources()
-    console.log('AUTO IPTV IMPORT:', imported)
-
-    const checked = await checkAndRemoveOffline()
-    console.log('AUTO IPTV CHECK:', checked)
-
-    console.log('AUTO IPTV: FINALIZADO')
+    res.json({ success: true })
   } catch (err) {
-    console.log('AUTO IPTV ERRO:', err.message)
-  }
-}
-
-// setInterval(fullAutoIPTV, 1000 * 60 * 60 * 6)
-
-app.post('/auto/run-now', auth, async (req, res) => {
-  try {
-    await fullAutoIPTV()
-    res.json({ message: 'IPTV automático executado com sucesso' })
-  } catch (err) {
-    res.status(500).json({ error: 'erro ao executar IPTV automático' })
+    console.log(err)
+    res.status(500).json({ error: 'erro remover filme' })
   }
 })
 
-app.get('/home/:profileId', auth, async (req, res) => {
+app.delete('/movies-clear', auth, adminOnly, async (req, res) => {
   try {
-    const profileId = req.params.profileId
-
-    const continueWatching = await pool.query(
-      `
-      SELECT c.*, h.progress, h.updated_at
-      FROM watch_history h
-      JOIN channels c ON c.id = h.channel_id
-      WHERE h.profile_id = $1
-      ORDER BY h.updated_at DESC
-      LIMIT 20
-      `,
-      [profileId]
-    )
-
-    const favorites = await pool.query(
-      `
-      SELECT c.*
-      FROM favorites f
-      JOIN channels c ON c.id = f.channel_id
-      WHERE f.profile_id = $1
-      ORDER BY f.created_at DESC
-      LIMIT 20
-      `,
-      [profileId]
-    )
-
-    const trending = await pool.query(`
-      SELECT c.*, COUNT(h.id) AS views
-      FROM channels c
-      LEFT JOIN watch_history h ON h.channel_id = c.id
-      WHERE c.is_online = true
-      GROUP BY c.id
-      ORDER BY views DESC, c.id DESC
-      LIMIT 30
-    `)
-
-    const liveNow = await pool.query(`
-      SELECT *
-      FROM channels
-      WHERE is_online = true
-      ORDER BY id DESC
-      LIMIT 30
-    `)
-
-    const tvAberta = await pool.query(`
-      SELECT *
-      FROM channels
-      WHERE category ILIKE '%TV Aberta%'
-      ORDER BY id DESC
-      LIMIT 40
-    `)
-
-    const esportes = await pool.query(`
-      SELECT *
-      FROM channels
-      WHERE category ILIKE '%Esportes%'
-      ORDER BY id DESC
-      LIMIT 40
-    `)
-
-    const filmes = await pool.query(`
-      SELECT *
-      FROM channels
-      WHERE category ILIKE '%Filmes%'
-      ORDER BY id DESC
-      LIMIT 40
-    `)
-
-    const recentes = await pool.query(`
-      SELECT *
-      FROM channels
-      ORDER BY created_at DESC
-      LIMIT 40
+    await pool.query(`
+      TRUNCATE TABLE movies RESTART IDENTITY
     `)
 
     res.json({
-      continueWatching: continueWatching.rows,
-      favorites: favorites.rows,
-      trending: trending.rows,
-      liveNow: liveNow.rows,
-      tvAberta: tvAberta.rows,
-      esportes: esportes.rows,
-      filmes: filmes.rows,
-      recentes: recentes.rows
+      success: true,
+      message: 'todos os filmes e séries foram removidos'
     })
   } catch (err) {
-    console.log('ERRO HOME:', err)
-    res.status(500).json({ error: 'erro ao carregar home inteligente' })
+    console.log(err)
+    res.status(500).json({ error: 'erro ao limpar filmes' })
   }
 })
-
-function parseEpisodeInfo(name = '') {
-  const match = name.match(/(.+?)\s*S(\d{1,2})E(\d{1,2})/i)
-
-  if (!match) return null
-
-  return {
-    seriesName: match[1].trim(),
-    season: Number(match[2]),
-    episode: Number(match[3])
-  }
-}
-
-function slugify(text = '') {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
 
 app.get('/series', auth, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT *
-      FROM channels
-      WHERE name ~* 'S[0-9]{1,2}E[0-9]{1,2}'
-      ORDER BY name ASC
-      LIMIT 3000
+      FROM movies
+      WHERE category = 'Series'
+      ORDER BY id DESC
     `)
-
-    const map = {}
-
-    for (const channel of result.rows) {
-      const info = parseEpisodeInfo(channel.name)
-
-      if (!info) continue
-
-      const slug = slugify(info.seriesName)
-
-      if (!map[slug]) {
-        map[slug] = {
-          slug,
-          name: info.seriesName,
-          category: 'Séries',
-          totalEpisodes: 0,
-          seasons: {},
-          poster: channel.logo || ''
-        }
-      }
-
-      if (!map[slug].seasons[info.season]) {
-        map[slug].seasons[info.season] = []
-      }
-
-      map[slug].seasons[info.season].push({
-        ...channel,
-        episode: info.episode,
-        season: info.season
-      })
-
-      map[slug].totalEpisodes++
-    }
-
-    const series = Object.values(map)
-      .map(item => ({
-        ...item,
-        seasons: Object.keys(item.seasons).length
-      }))
-      .sort((a, b) => b.totalEpisodes - a.totalEpisodes)
-
-    res.json(series)
-  } catch (err) {
-    console.log('ERRO SERIES:', err)
-    res.status(500).json({ error: 'erro ao buscar séries' })
-  }
-})
-
-app.get('/series/:slug', auth, async (req, res) => {
-  try {
-    const result = await pool.query(`
-      SELECT *
-      FROM channels
-      WHERE name ~* 'S[0-9]{1,2}E[0-9]{1,2}'
-      ORDER BY name ASC
-      LIMIT 5000
-    `)
-
-    const episodes = []
-
-    let seriesName = ''
-
-    for (const channel of result.rows) {
-      const info = parseEpisodeInfo(channel.name)
-
-      if (!info) continue
-
-      const slug = slugify(info.seriesName)
-
-      if (slug === req.params.slug) {
-        seriesName = info.seriesName
-
-        episodes.push({
-          ...channel,
-          season: info.season,
-          episode: info.episode
-        })
-      }
-    }
-
-    episodes.sort((a, b) => {
-      if (a.season !== b.season) return a.season - b.season
-      return a.episode - b.episode
-    })
-
-    res.json({
-      slug: req.params.slug,
-      name: seriesName,
-      episodes
-    })
-  } catch (err) {
-    console.log('ERRO SERIES DETAIL:', err)
-    res.status(500).json({ error: 'erro ao buscar episódios' })
-  }
-})
-
-app.get('/channels/:id/streams', auth, async (req, res) => {
-
-  try {
-
-    const channelId = req.params.id
-
-    const main = await pool.query(
-      'SELECT id, name, url, category, logo, health_score FROM channels WHERE id = $1',
-      [channelId]
-    )
-
-    const reserves = await pool.query(
-      `
-      SELECT id, name, url, quality, health_score
-      FROM channel_streams
-      WHERE channel_id = $1
-      AND is_online = true
-      ORDER BY health_score DESC, success_count DESC, id DESC
-      `,
-      [channelId]
-    )
-
-    res.json({
-      main: main.rows[0] || null,
-      streams: reserves.rows
-    })
-
-  } catch (err) {
-
-    console.log('ERRO GET STREAMS:', err)
-
-    res.status(500).json({
-      error: 'erro ao buscar streams reserva'
-    })
-
-  }
-
-})
-
-app.get('/epg/:channel', auth, async (req, res) => {
-
-  try {
-
-    const rawChannel = req.params.channel || ''
-
-    const cleanChannel = rawChannel
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/\(.*?\)/g, '')
-      .replace(/\[.*?\]/g, '')
-      .replace(/\bhd\b|\bfhd\b|\bsd\b|\b1080p\b|\b720p\b|\b480p\b/gi, '')
-      .replace(/[^a-z0-9 ]/g, ' ')
-      .trim()
-
-    const keywords = cleanChannel
-      .split(' ')
-      .filter(word => word.length >= 3)
-
-    const priorityMap = {
-      globo: ['globo', 'rede globo'],
-      record: ['record', 'record news'],
-      sbt: ['sbt'],
-      band: ['band'],
-      cnn: ['cnn'],
-      nick: ['nick', 'nickelodeon'],
-      cartoon: ['cartoon'],
-      discovery: ['discovery'],
-      espn: ['espn'],
-      sportv: ['sportv']
-    }
-
-    let searchTerms = [...keywords]
-
-    for (const key of Object.keys(priorityMap)) {
-
-      if (cleanChannel.includes(key)) {
-
-        searchTerms = priorityMap[key]
-        break
-
-      }
-
-    }
-
-    const result = await pool.query(
-      `
-      SELECT *
-      FROM epg_now
-      WHERE ${searchTerms
-        .map((_, index) => `channel_name ILIKE $${index + 1}`)
-        .join(' OR ')}
-      ORDER BY start_time ASC
-      LIMIT 10
-      `,
-      searchTerms.map(term => `%${term}%`)
-    )
 
     res.json(result.rows)
-
   } catch (err) {
-
-    console.log('ERRO EPG API:', err.message)
-
-    res.status(500).json({
-      error: 'erro ao buscar epg'
-    })
-
+    console.log(err)
+    res.status(500).json({ error: 'erro series' })
   }
-
 })
 
 app.get('/', (req, res) => {
-
-  res.send('IPTV AUTO SERVER COMPLETO ONLINE')
-
+  res.send('IPTV SERVER ONLINE')
 })
-
-  setInterval(async () => {
-
-  try {
-
-    console.log('AUTO UPDATE INICIADO')
-
-    await importAllSources()
-
-    await checkAndRemoveOffline()
-
-    console.log('AUTO UPDATE FINALIZADO')
-
-  } catch (err) {
-
-    console.log('AUTO UPDATE ERROR:', err.message)
-
-  }
-
-}, 1000 * 60 * 2)
-async function updateEPG() {
-
-  try {
-
-    console.log('ATUALIZANDO EPG...')
-
-    const parser = new XMLParser({
-      ignoreAttributes: false
-    })
-
-    const response = await fetch(EPG_URL)
-
-    const xml = await response.text()
-
-    const parsed = parser.parse(xml)
-
-    const programmes = parsed?.tv?.programme || []
-
-    await pool.query('DELETE FROM epg_now')
-
-    for (const p of programmes.slice(0, 5000)) {
-
-      const channel = p['@_channel'] || ''
-
-      const title =
-        typeof p.title === 'object'
-          ? p.title['#text']
-          : p.title || ''
-
-      const desc =
-        typeof p.desc === 'object'
-          ? p.desc['#text']
-          : p.desc || ''
-
-      function parseEPGDate(str) {
-
-  if (!str) return null
-
-  const clean = str.substring(0, 14)
-
-  const year = clean.substring(0, 4)
-  const month = clean.substring(4, 6)
-  const day = clean.substring(6, 8)
-
-  const hour = clean.substring(8, 10)
-  const minute = clean.substring(10, 12)
-  const second = clean.substring(12, 14)
-
-  return `${year}-${month}-${day} ${hour}:${minute}:${second}`
-
-}
-
-const start = parseEPGDate(p['@_start'])
-const stop = parseEPGDate(p['@_stop'])
-
-      if (!channel || !title) continue
-
-      await pool.query(
-        `
-        INSERT INTO epg_now
-        (
-          channel_name,
-          title,
-          description,
-          start_time,
-          end_time
-        )
-        VALUES ($1,$2,$3,$4,$5)
-        `,
-        [
-          channel,
-          title,
-          desc,
-          start,
-          stop
-        ]
-      )
-    }
-
-    console.log('EPG OK')
-
-  } catch (err) {
-
-    console.log('ERRO EPG:', err.message)
-
-  }
-}
-
-updateEPG()
-
-setInterval(() => {
-  updateEPG()
-}, 1000 * 60 * 60 * 2)
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`SERVER ON ${PORT}`)
-  console.log('IPTV AUTO COMPLETO ATIVO')
-  console.log('GitHub scan + importação + verificação online + remoção offline')
 })
