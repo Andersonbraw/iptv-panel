@@ -43,9 +43,9 @@ function AdminPanel({ user, setUser }) {
 
   async function loadCounts() {
     try {
-      const channels = await axios.get(`${API}/channels`)
-      const movies = await axios.get(`${API}/movies`)
-      const series = await axios.get(`${API}/series`)
+      const channels = await axios.get(`${API}/channels`, authHeaders)
+      const movies = await axios.get(`${API}/movies`, authHeaders)
+      const series = await axios.get(`${API}/series`, authHeaders)
 
       setChannelsCount(channels.data.length)
       setMoviesCount(movies.data.length)
