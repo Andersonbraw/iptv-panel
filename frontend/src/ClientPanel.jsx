@@ -18,6 +18,12 @@ const PLACEHOLDER =
 function HlsPlayer({ src, style }) {
   const videoRef = useRef(null)
 
+  const [loading, setLoading] =
+    useState(true)
+
+  const [error, setError] =
+    useState(false)
+
   useEffect(() => {
     if (!src || !videoRef.current)
       return
@@ -26,11 +32,39 @@ function HlsPlayer({ src, style }) {
 
     let hls = null
 
+    let timeout = null
+
+    setLoading(true)
+
+    setError(false)
+
     video.pause()
 
     video.removeAttribute('src')
 
     video.load()
+
+    timeout = setTimeout(() => {
+      setLoading(false)
+
+      setError(true)
+    }, 15000)
+
+    function ready() {
+      clearTimeout(timeout)
+
+      setLoading(false)
+
+      setError(false)
+    }
+
+    function failed() {
+      clearTimeout(timeout)
+
+      setLoading(false)
+
+      setError(true)
+    }
 
     if (
       src.includes('.m3u8') &&
@@ -38,7 +72,8 @@ function HlsPlayer({ src, style }) {
     ) {
       hls = new Hls({
         enableWorker: true,
-        lowLatencyMode: true
+        lowLatencyMode: true,
+        backBufferLength: 90
       })
 
       hls.loadSource(src)
@@ -48,6 +83,8 @@ function HlsPlayer({ src, style }) {
       hls.on(
         Hls.Events.MANIFEST_PARSED,
         () => {
+          ready()
+
           video
             .play()
             .catch(() => {})
@@ -68,7 +105,10 @@ function HlsPlayer({ src, style }) {
                 break
 
               default:
+                failed()
+
                 hls.destroy()
+
                 break
             }
           }
@@ -77,22 +117,124 @@ function HlsPlayer({ src, style }) {
     } else {
       video.src = src
 
-      video.play().catch(() => {})
+      video.onloadeddata =
+        () => {
+          ready()
+        }
+
+      video.onerror = () => {
+        failed()
+      }
+
+      video
+        .play()
+        .catch(() => {})
     }
 
     return () => {
+      clearTimeout(timeout)
+
       if (hls) hls.destroy()
     }
   }, [src])
 
   return (
-    <video
-      ref={videoRef}
-      controls
-      autoPlay
-      playsInline
-      style={style}
-    />
+    <div
+      style={{
+        position: 'relative'
+      }}
+    >
+      {loading && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background:
+              'rgba(0,0,0,0.82)',
+            display: 'flex',
+            flexDirection:
+              'column',
+            justifyContent:
+              'center',
+            alignItems:
+              'center',
+            zIndex: 10,
+            gap: 18
+          }}
+        >
+          <div
+            style={{
+              width: 60,
+              height: 60,
+              border:
+                '5px solid #0f172a',
+              borderTop:
+                '5px solid #38bdf8',
+              borderRadius:
+                '50%',
+              animation:
+                'spin 1s linear infinite'
+            }}
+          />
+
+          <h2
+            style={{
+              color: '#fff',
+              margin: 0
+            }}
+          >
+            Carregando canal...
+          </h2>
+        </div>
+      )}
+
+      {error && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background:
+              'rgba(0,0,0,0.92)',
+            display: 'flex',
+            flexDirection:
+              'column',
+            justifyContent:
+              'center',
+            alignItems:
+              'center',
+            zIndex: 11,
+            color: '#fff',
+            gap: 15
+          }}
+        >
+          <h2
+            style={{
+              margin: 0,
+              color: '#ef4444'
+            }}
+          >
+            Canal offline
+          </h2>
+
+          <p
+            style={{
+              color: '#cbd5e1'
+            }}
+          >
+            Este canal pode
+            estar indisponível.
+          </p>
+        </div>
+      )}
+
+      <video
+        ref={videoRef}
+        controls
+        autoPlay
+        playsInline
+        style={style}
+      />
+    </div>
   )
 }
 
