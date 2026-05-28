@@ -436,7 +436,36 @@ function ClientPanel({
       )
   }, [selectedEpisodes, selectedSeason])
 
-  function openPlayer(item) {
+  async function reportWatching(title, type) {
+    try {
+      await axios.post(
+        `${API}/watching`,
+        {
+          title: title || '',
+          type: type || ''
+        },
+        authHeaders
+      )
+    } catch (err) {
+      console.log('ERRO WATCHING:', err)
+    }
+  }
+
+  async function openPlayer(item) {
+    const title =
+      item.title ||
+      item.name ||
+      'Conteúdo'
+
+    const type =
+      page === 'movies'
+        ? 'Filme'
+        : page === 'series'
+        ? 'Série'
+        : 'Canal'
+
+    await reportWatching(title, type)
+
     setSelectedStream({
       title:
         item.title ||
@@ -447,6 +476,15 @@ function ClientPanel({
     })
 
     setPlayerOpen(true)
+  }
+
+  async function selectChannel(channel) {
+    setSelectedChannel(channel)
+
+    await reportWatching(
+      channel.name,
+      'Canal'
+    )
   }
 
   function chooseEpisode(item) {
@@ -634,7 +672,7 @@ function ClientPanel({
                       }
                     }}
                     onClick={() =>
-                      setSelectedChannel(channel)
+                      selectChannel(channel)
                     }
                   >
                     <img

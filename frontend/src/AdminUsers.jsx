@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 
 const API =
@@ -32,6 +32,14 @@ function AdminUsers({
       )}`
     }
   }, [])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      reloadUsers()
+    }, 5000)
+
+    return () => clearInterval(interval)
+  }, [reloadUsers])
 
   function normalize(text = '') {
     return text
@@ -461,6 +469,30 @@ Senha: ${createdLogin.password}
                 : 'Sem vencimento'}
             </small>
 
+            <br />
+
+            <small style={styles.watchingText}>
+              Assistindo:{' '}
+              {user.watching
+                ? `${user.watching_type || 'Conteúdo'}: ${user.watching}`
+                : 'Nada no momento'}
+            </small>
+
+            {user.watching_updated_at && (
+              <>
+                <br />
+
+                <small style={styles.watchingTime}>
+                  Atualizado:{' '}
+                  {new Date(
+                    user.watching_updated_at
+                  ).toLocaleString(
+                    'pt-BR'
+                  )}
+                </small>
+              </>
+            )}
+
             <div
               style={
                 styles.quickActions
@@ -821,6 +853,15 @@ const styles = {
   },
 
   email: {
+    color: '#94a3b8'
+  },
+
+  watchingText: {
+    color: '#38bdf8',
+    fontWeight: 'bold'
+  },
+
+  watchingTime: {
     color: '#94a3b8'
   },
 
