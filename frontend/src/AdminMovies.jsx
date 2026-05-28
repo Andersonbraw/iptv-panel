@@ -17,6 +17,9 @@ function AdminMovies() {
   const [filter, setFilter] =
     useState('Todos')
 
+  const [m3uUrl, setM3uUrl] =
+    useState('')
+
   const [loading, setLoading] =
     useState(false)
 
@@ -52,6 +55,42 @@ function AdminMovies() {
 
       alert(
         'Erro ao carregar filmes'
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function importMoviesM3U() {
+    if (!m3uUrl.trim()) {
+      alert('Cole URL M3U')
+      return
+    }
+
+    try {
+      setLoading(true)
+
+      const res = await axios.post(
+        `${API}/movies/import-m3u`,
+        {
+          url: m3uUrl,
+          type: 'Filmes'
+        },
+        authHeaders
+      )
+
+      alert(
+        `Importados: ${res.data.added || 0}`
+      )
+
+      setM3uUrl('')
+
+      await loadMovies()
+    } catch (err) {
+      alert(
+        err.response?.data
+          ?.error ||
+          'Erro ao importar filmes'
       )
     } finally {
       setLoading(false)
@@ -251,6 +290,35 @@ function AdminMovies() {
         </div>
       </div>
 
+      <div style={styles.importBox}>
+        <input
+          placeholder='Cole URL M3U Filmes/Séries...'
+          value={m3uUrl}
+          onChange={e =>
+            setM3uUrl(
+              e.target.value
+            )
+          }
+          style={styles.importInput}
+        />
+
+        <button
+          style={styles.importButton}
+          onClick={
+            importMoviesM3U
+          }
+        >
+          Importar M3U
+        </button>
+
+        <button
+          style={styles.updateButton}
+          onClick={loadMovies}
+        >
+          Atualizar
+        </button>
+      </div>
+
       <div style={styles.topActions}>
         <input
           placeholder='Buscar...'
@@ -411,6 +479,42 @@ const styles = {
 
   subtitle: {
     color: '#94a3b8'
+  },
+
+  importBox: {
+    display: 'grid',
+    gridTemplateColumns:
+      '2fr 180px 180px',
+    gap: 12,
+    marginBottom: 20
+  },
+
+  importInput: {
+    padding: 14,
+    borderRadius: 14,
+    border: 'none',
+    background: '#07142b',
+    color: '#fff'
+  },
+
+  importButton: {
+    border: 'none',
+    borderRadius: 14,
+    background:
+      'linear-gradient(90deg,#38bdf8,#0ea5e9)',
+    color: '#000',
+    fontWeight: 'bold',
+    cursor: 'pointer'
+  },
+
+  updateButton: {
+    border: 'none',
+    borderRadius: 14,
+    background:
+      'linear-gradient(90deg,#38bdf8,#0ea5e9)',
+    color: '#000',
+    fontWeight: 'bold',
+    cursor: 'pointer'
   },
 
   topActions: {
