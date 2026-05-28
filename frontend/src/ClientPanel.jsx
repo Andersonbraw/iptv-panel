@@ -5,7 +5,6 @@ import {
   useRef,
   useState
 } from 'react'
-
 import axios from 'axios'
 import Hls from 'hls.js'
 
@@ -17,12 +16,8 @@ const PLACEHOLDER =
 
 function HlsPlayer({ src, style }) {
   const videoRef = useRef(null)
-
-  const [loading, setLoading] =
-    useState(true)
-
-  const [error, setError] =
-    useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
     if (!src || !videoRef.current) return
@@ -157,39 +152,16 @@ function ClientPanel({
   setUser,
   logout
 }) {
-  const [channels, setChannels] =
-    useState([])
-
-  const [movies, setMovies] =
-    useState([])
-
-  const [
-    selectedChannel,
-    setSelectedChannel
-  ] = useState(null)
-
-  const [
-    selectedStream,
-    setSelectedStream
-  ] = useState(null)
-
-  const [playerOpen, setPlayerOpen] =
-    useState(false)
-
-  const [search, setSearch] =
-    useState('')
-
-  const [movieSearch, setMovieSearch] =
-    useState('')
-
-  const [seriesSearch, setSeriesSearch] =
-    useState('')
-
-  const [page, setPage] =
-    useState('tv')
-
-  const [loading, setLoading] =
-    useState(true)
+  const [channels, setChannels] = useState([])
+  const [movies, setMovies] = useState([])
+  const [selectedChannel, setSelectedChannel] = useState(null)
+  const [selectedStream, setSelectedStream] = useState(null)
+  const [playerOpen, setPlayerOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const [movieSearch, setMovieSearch] = useState('')
+  const [seriesSearch, setSeriesSearch] = useState('')
+  const [page, setPage] = useState('tv')
+  const [loading, setLoading] = useState(true)
 
   const authHeaders = useMemo(() => {
     return {
@@ -200,6 +172,20 @@ function ClientPanel({
       }
     }
   }, [])
+
+  function handleLogout() {
+    if (logout) {
+      logout()
+      return
+    }
+
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+
+    if (setUser) {
+      setUser(null)
+    }
+  }
 
   function normalize(text = '') {
     return text
@@ -312,16 +298,12 @@ function ClientPanel({
       const grouped = {}
 
       onlyMovies.forEach(movie => {
-        const originalTitle =
-          movie.title || ''
-
+        const originalTitle = movie.title || ''
         const cleanTitle =
           cleanGroupTitle(originalTitle)
 
         const normalizedTitle =
-          normalize(
-            cleanTitle || originalTitle
-          )
+          normalize(cleanTitle || originalTitle)
 
         const matchesSearch =
           normalizedTitle.includes(
@@ -353,16 +335,12 @@ function ClientPanel({
       const grouped = {}
 
       onlySeries.forEach(item => {
-        const originalTitle =
-          item.title || ''
-
+        const originalTitle = item.title || ''
         const cleanTitle =
           cleanGroupTitle(originalTitle)
 
         const normalizedTitle =
-          normalize(
-            cleanTitle || originalTitle
-          )
+          normalize(cleanTitle || originalTitle)
 
         const matchesSearch =
           normalizedTitle.includes(
@@ -406,7 +384,6 @@ function ClientPanel({
     return (
       <div style={styles.loadingPage}>
         <div style={styles.loader}></div>
-
         <h1>Carregando IPTV...</h1>
       </div>
     )
@@ -472,7 +449,7 @@ function ClientPanel({
 
         <button
           style={styles.redButton}
-          onClick={logout}
+          onClick={handleLogout}
         >
           Sair
         </button>
