@@ -165,6 +165,7 @@ function ClientPanel({
   const [episodesModal, setEpisodesModal] = useState(false)
   const [selectedEpisodes, setSelectedEpisodes] = useState([])
   const [selectedSeriesTitle, setSelectedSeriesTitle] = useState('')
+  const [selectedSeason, setSelectedSeason] = useState('1')
 
   const authHeaders = useMemo(() => {
     return {
@@ -211,6 +212,28 @@ function ClientPanel({
       .replace(/\s+\d+$/g, '')
       .replace(/\s+/g, ' ')
       .trim()
+  }
+
+  function getSeasonNumber(title = '') {
+    const match =
+      title.match(/S(\d{1,2})E\d{1,3}/i) ||
+      title.match(/TEMPORADA\s?(\d{1,2})/i)
+
+    return match
+      ? String(Number(match[1]))
+      : '1'
+  }
+
+  function getEpisodeNumber(title = '') {
+    const match =
+      title.match(/S\d{1,2}E(\d{1,3})/i) ||
+      title.match(/EPISODIO\s?(\d{1,3})/i) ||
+      title.match(/EPISÓDIO\s?(\d{1,3})/i) ||
+      title.match(/EP\s?(\d{1,3})/i)
+
+    return match
+      ? Number(match[1])
+      : 9999
   }
 
   async function loadChannels() {
@@ -357,22 +380,61 @@ function ClientPanel({
 
         if (!matchesSearch) return
 
+        const episodeItem = {
+          ...item,
+          season: getSeasonNumber(originalTitle),
+          episodeNumber: getEpisodeNumber(originalTitle)
+        }
+
         if (!grouped[normalizedTitle]) {
           grouped[normalizedTitle] = {
             ...item,
             title:
               cleanTitle || originalTitle,
             episodes: 1,
-            episodeList: [item]
+            episodeList: [episodeItem]
           }
         } else {
           grouped[normalizedTitle].episodes++
-          grouped[normalizedTitle].episodeList.push(item)
+          grouped[normalizedTitle].episodeList.push(episodeItem)
         }
       })
 
-      return Object.values(grouped)
+      return Object.values(grouped).map(item => ({
+        ...item,
+        episodeList: item.episodeList.sort((a, b) => {
+          if (Number(a.season) !== Number(b.season)) {
+            return Number(a.season) - Number(b.season)
+          }
+
+          return a.episodeNumber - b.episodeNumber
+        })
+      }))
     }, [onlySeries, seriesSearch])
+
+  const seasons = useMemo(() => {
+    const found = new Set()
+
+    selectedEpisodes.forEach(ep => {
+      found.add(ep.season || '1')
+    })
+
+    return Array.from(found).sort(
+      (a, b) => Number(a) - Number(b)
+    )
+  }, [selectedEpisodes])
+
+  const episodesBySeason = useMemo(() => {
+    return selectedEpisodes
+      .filter(ep =>
+        String(ep.season || '1') ===
+        String(selectedSeason)
+      )
+      .sort(
+        (a, b) =>
+          a.episodeNumber - b.episodeNumber
+      )
+  }, [selectedEpisodes, selectedSeason])
 
   function openPlayer(item) {
     setSelectedStream({
@@ -392,8 +454,12 @@ function ClientPanel({
       item.episodeList &&
       item.episodeList.length > 1
     ) {
+      const firstSeason =
+        item.episodeList[0]?.season || '1'
+
       setSelectedEpisodes(item.episodeList)
       setSelectedSeriesTitle(item.title)
+      setSelectedSeason(firstSeason)
       setEpisodesModal(true)
       return
     }
@@ -723,9 +789,16 @@ function ClientPanel({
           <div style={styles.episodesOverlay}>
             <div style={styles.episodesModal}>
               <div style={styles.episodesHeader}>
-                <h2 style={{ margin: 0 }}>
-                  {selectedSeriesTitle}
-                </h2>
+                <div>
+                  <h2 style={{ margin: 0 }}>
+                    {selectedSeriesTitle}
+                  </h2>
+
+                  <p style={styles.episodesCounter}>
+                    {selectedEpisodes.length}{' '}
+                    episódios
+                  </p>
+                </div>
 
                 <button
                   style={styles.closeEpisodesButton}
@@ -737,11 +810,30 @@ function ClientPanel({
                 </button>
               </div>
 
+              <div style={styles.seasonTabs}>
+                {seasons.map(season => (
+                  <button
+                    key={season}
+                    style={
+                      String(selectedSeason) ===
+                      String(season)
+                        ? styles.activeSeasonButton
+                        : styles.seasonButton
+                    }
+                    onClick={() =>
+                      setSelectedSeason(season)
+                    }
+                  >
+                    Temporada {season}
+                  </button>
+                ))}
+              </div>
+
               <div style={styles.episodesList}>
-                {selectedEpisodes.map(
+                {episodesBySeason.map(
                   (ep, index) => (
                     <button
-                      key={index}
+                      key={`${ep.id}-${index}`}
                       style={styles.episodeItem}
                       onClick={() => {
                         openPlayer(ep)
@@ -749,7 +841,10 @@ function ClientPanel({
                       }}
                     >
                       <span>
-                        Episódio {index + 1}
+                        Episódio{' '}
+                        {ep.episodeNumber !== 9999
+                          ? ep.episodeNumber
+                          : index + 1}
                       </span>
 
                       <small>
@@ -1155,8 +1250,8 @@ const styles = {
 
   episodesModal: {
     width: '90%',
-    maxWidth: 700,
-    maxHeight: '80vh',
+    maxWidth: 760,
+    maxHeight: '82vh',
     background:
       'linear-gradient(180deg,#07142b,#020617)',
     borderRadius: 24,
@@ -1171,7 +1266,14 @@ const styles = {
     justifyContent:
       'space-between',
     alignItems: 'center',
-    marginBottom: 20
+    marginBottom: 16,
+    gap: 12
+  },
+
+  episodesCounter: {
+    color: '#94a3b8',
+    margin: '6px 0 0',
+    fontSize: 13
   },
 
   closeEpisodesButton: {
@@ -1186,12 +1288,44 @@ const styles = {
     fontWeight: 'bold'
   },
 
+  seasonTabs: {
+    display: 'flex',
+    gap: 8,
+    overflowX: 'auto',
+    paddingBottom: 12,
+    marginBottom: 12
+  },
+
+  seasonButton: {
+    background: '#0f172a',
+    border:
+      '1px solid rgba(56,189,248,0.2)',
+    color: '#cbd5e1',
+    borderRadius: 999,
+    padding: '9px 14px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    whiteSpace: 'nowrap'
+  },
+
+  activeSeasonButton: {
+    background:
+      'linear-gradient(90deg,#38bdf8,#0ea5e9)',
+    border: 'none',
+    color: '#000',
+    borderRadius: 999,
+    padding: '9px 14px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    whiteSpace: 'nowrap'
+  },
+
   episodesList: {
     display: 'flex',
     flexDirection: 'column',
     gap: 10,
     overflowY: 'auto',
-    maxHeight: '60vh',
+    maxHeight: '56vh',
     paddingRight: 6
   },
 
