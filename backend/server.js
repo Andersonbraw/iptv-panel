@@ -921,6 +921,23 @@ app.delete('/channels/:id', auth, async (req, res) => {
   }
 })
 
+app.delete('/channels-clear', auth, adminOnly, async (req, res) => {
+  try {
+    await pool.query(`
+      TRUNCATE TABLE channels RESTART IDENTITY CASCADE
+    `)
+
+    res.json({
+      success: true,
+      message: 'todos os canais foram removidos'
+    })
+  } catch (err) {
+    console.log(err)
+    res.status(500).json({
+      error: 'erro ao limpar canais'
+    })
+  }
+})
 app.post('/import-m3u', auth, async (req, res) => {
   try {
     const { url } = req.body
