@@ -48,8 +48,6 @@ const { Pool } = pg
 const app = express()
 const PORT = process.env.PORT || 3000
 const JWT_SECRET = 'iptv_panel_secret_2026'
-const EPG_URL =
-  'https://raw.githubusercontent.com/matthuisman/i.mjh.nz/master/PlutoTV/br.xml'
 
 app.use(
   cors({
@@ -1197,6 +1195,11 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
       })
     }
 
+    const targetType =
+      type === 'Series'
+        ? 'Series'
+        : 'Filmes'
+
     const text =
       await fetchM3UText(url)
 
@@ -1206,6 +1209,120 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
     let current = null
     let added = 0
     let skipped = 0
+
+    function normalizeText(text = '') {
+      return text
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+    }
+
+    function isLiveItem(title = '', group = '', streamUrl = '') {
+      const text = normalizeText(`
+        ${title}
+        ${group}
+        ${streamUrl}
+      `)
+
+      const liveWords = [
+        'ao vivo',
+        'live',
+        'canais',
+        'canal',
+        'tv',
+        'esportes',
+        'sport',
+        'sports',
+        'premiere',
+        'combate',
+        'espn',
+        'sportv',
+        'noticias',
+        'news',
+        'jornal',
+        'globo',
+        'record',
+        'sbt',
+        'band',
+        'redetv',
+        'cnn',
+        'radio',
+        'music',
+        'musica',
+        'documentarios',
+        'discovery',
+        'history'
+      ]
+
+      return (
+        text.includes('/live/') ||
+        text.includes('/canais/') ||
+        liveWords.some(word =>
+          text.includes(word)
+        )
+      )
+    }
+
+    function isSeriesItem(title = '', group = '', streamUrl = '') {
+      const text = normalizeText(`
+        ${title}
+        ${group}
+        ${streamUrl}
+      `)
+
+      return (
+        /s\d{1,2}e\d{1,3}/i.test(title) ||
+        text.includes('/series/') ||
+        text.includes('series') ||
+        text.includes('serie') ||
+        text.includes('seriados') ||
+        text.includes('temporada') ||
+        text.includes('episodio') ||
+        text.includes('episode') ||
+        text.includes('tv show') ||
+        text.includes('shows')
+      )
+    }
+
+    function isMovieItem(title = '', group = '', streamUrl = '') {
+      const text = normalizeText(`
+        ${title}
+        ${group}
+        ${streamUrl}
+      `)
+
+      const movieWords = [
+        'filmes',
+        'filme',
+        'movie',
+        'movies',
+        'cinema',
+        'vod',
+        'lancamento',
+        'lancamentos',
+        'acao',
+        'aventura',
+        'comedia',
+        'drama',
+        'terror',
+        'suspense',
+        'romance',
+        'nacional',
+        'dublado',
+        'legendado',
+        '4k'
+      ]
+
+      return (
+        text.includes('/movie/') ||
+        streamUrl.toLowerCase().includes('.mp4') ||
+        streamUrl.toLowerCase().includes('.mkv') ||
+        streamUrl.toLowerCase().includes('.avi') ||
+        movieWords.some(word =>
+          text.includes(word)
+        )
+      )
+    }
 
     for (const lineRaw of lines) {
       const line =
@@ -1233,58 +1350,16 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
 
         const group =
           groupMatch
-            ? groupMatch[1].toLowerCase()
+            ? groupMatch[1].trim()
             : ''
-
-        const normalizedGroup =
-  group.toLowerCase()
-
-const isSeries =
-  type === 'Series' ||
-  /s\d{1,2}e\d{1,2}/i.test(title) ||
-  normalizedGroup.includes('series') ||
-  normalizedGroup.includes('séries') ||
-  normalizedGroup.includes('tv show') ||
-  normalizedGroup.includes('shows') ||
-  normalizedGroup.includes('temporada') ||
-  normalizedGroup.includes('anime')
-
-const isMovie =
-  type === 'Filmes' ||
-  normalizedGroup.includes('movie') ||
-  normalizedGroup.includes('movies') ||
-  normalizedGroup.includes('filme') ||
-  normalizedGroup.includes('filmes') ||
-  normalizedGroup.includes('cinema') ||
-  normalizedGroup.includes('vod') ||
-  normalizedGroup.includes('4k') ||
-  normalizedGroup.includes('lançamento') ||
-  normalizedGroup.includes('lancamento')
-
-        if (!isMovie && !isSeries) {
-          current = null
-          skipped++
-          continue
-        }
-
-        const tmdb =
-          await fetchTMDBPoster(title)
 
         current = {
           title,
-          image:
-            tmdb?.poster ||
-            (logoMatch ? logoMatch[1] : ''),
-          banner:
-            tmdb?.banner ||
-            (logoMatch ? logoMatch[1] : ''),
-          description:
-            tmdb?.overview ||
-            'Importado IPTV',
-          year:
-            tmdb?.year || '',
-          category:
-            isSeries ? 'Series' : 'Filmes'
+          group,
+          logo:
+            logoMatch
+              ? logoMatch[1]
+              : ''
         }
 
         continue
@@ -1292,18 +1367,67 @@ const isMovie =
 
       if (current && line.startsWith('http')) {
         try {
+          const streamUrl =
+            line.trim()
+
+          const live =
+            isLiveItem(
+              current.title,
+              current.group,
+              streamUrl
+            )
+
+          const series =
+            isSeriesItem(
+              current.title,
+              current.group,
+              streamUrl
+            )
+
+          const movie =
+            isMovieItem(
+              current.title,
+              current.group,
+              streamUrl
+            )
+
+          if (
+            targetType === 'Series' &&
+            !series
+          ) {
+            skipped++
+            current = null
+            continue
+          }
+
+          if (
+            targetType === 'Filmes' &&
+            (
+              live ||
+              series ||
+              !movie
+            )
+          ) {
+            skipped++
+            current = null
+            continue
+          }
+
+          const finalCategory =
+            targetType === 'Series'
+              ? 'Series'
+              : 'Filmes'
+
           const exists =
             await pool.query(
               `
               SELECT id
               FROM movies
               WHERE video = $1
-              OR LOWER(title) = LOWER($2)
               LIMIT 1
               `,
               [
-                line,
-                current.title
+                streamUrl
               ]
             )
 
@@ -1329,12 +1453,12 @@ const isMovie =
             `,
             [
               current.title,
-              current.year,
-              current.category,
-              current.image,
-              current.banner,
-              line,
-              current.description
+              '',
+              finalCategory,
+              current.logo,
+              current.logo,
+              streamUrl,
+              `Importado IPTV - ${current.group || finalCategory}`
             ]
           )
 
