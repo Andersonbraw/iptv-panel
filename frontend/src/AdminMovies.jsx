@@ -12,11 +12,19 @@ const filteredMovies =
           ''
         )
         .replace(
+          /S\d{1,2}\sE\d{1,2}/gi,
+          ''
+        )
+        .replace(
           /TEMPORADA\s?\d+/gi,
           ''
         )
         .replace(
           /EPISODIO\s?\d+/gi,
+          ''
+        )
+        .replace(
+          /EP\s?\d+/gi,
           ''
         )
         .replace(
@@ -38,7 +46,8 @@ const filteredMovies =
 
       const category =
         normalize(
-          movie.category || ''
+          movie.category ||
+            ''
         )
 
       const matchesSearch =
@@ -50,7 +59,9 @@ const filteredMovies =
         filter === 'Todos'
           ? true
           : category.includes(
-              normalize(filter)
+              normalize(
+                filter
+              )
             )
 
       if (
@@ -61,7 +72,9 @@ const filteredMovies =
       }
 
       if (
-        !grouped[normalizedTitle]
+        !grouped[
+          normalizedTitle
+        ]
       ) {
         grouped[
           normalizedTitle
@@ -79,3 +92,28 @@ const filteredMovies =
 
     return Object.values(grouped)
   }, [movies, search, filter])
+
+...
+
+<p
+  style={
+    styles.movieInfo
+  }
+>
+  {movie.year ||
+    'VOD'}{' '}
+  •{' '}
+  {movie.category ||
+    'Filmes'}
+
+  {movie.episodes >
+    1 && (
+    <>
+      {' '}
+      •{' '}
+      {
+        movie.episodes
+      } episódios
+    </>
+  )}
+</p>
