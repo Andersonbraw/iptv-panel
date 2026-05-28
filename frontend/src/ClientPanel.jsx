@@ -320,10 +320,12 @@ function ClientPanel({
             ...movie,
             title:
               cleanTitle || originalTitle,
-            episodes: 1
+            episodes: 1,
+            episodeList: [movie]
           }
         } else {
           grouped[normalizedTitle].episodes++
+          grouped[normalizedTitle].episodeList.push(movie)
         }
       })
 
@@ -357,10 +359,12 @@ function ClientPanel({
             ...item,
             title:
               cleanTitle || originalTitle,
-            episodes: 1
+            episodes: 1,
+            episodeList: [item]
           }
         } else {
           grouped[normalizedTitle].episodes++
+          grouped[normalizedTitle].episodeList.push(item)
         }
       })
 
@@ -378,6 +382,42 @@ function ClientPanel({
     })
 
     setPlayerOpen(true)
+  }
+
+  function chooseEpisode(item) {
+    if (
+      item.episodeList &&
+      item.episodeList.length > 1
+    ) {
+      const options =
+        item.episodeList.map(
+          (ep, index) =>
+            `${index + 1} - ${ep.title}`
+        )
+
+      const selected =
+        prompt(
+          `Escolha o episódio:\n\n${options.join(
+            '\n'
+          )}`
+        )
+
+      const selectedIndex =
+        parseInt(selected) - 1
+
+      if (
+        !isNaN(selectedIndex) &&
+        item.episodeList[selectedIndex]
+      ) {
+        openPlayer(
+          item.episodeList[selectedIndex]
+        )
+      }
+
+      return
+    }
+
+    openPlayer(item)
   }
 
   if (loading) {
@@ -676,10 +716,12 @@ function ClientPanel({
                     <button
                       style={styles.watchButton}
                       onClick={() =>
-                        openPlayer(item)
+                        chooseEpisode(item)
                       }
                     >
-                      Assistir
+                      {item.episodes > 1
+                        ? 'Episódios'
+                        : 'Assistir'}
                     </button>
                   </div>
                 </div>
