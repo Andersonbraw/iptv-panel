@@ -162,6 +162,9 @@ function ClientPanel({
   const [seriesSearch, setSeriesSearch] = useState('')
   const [page, setPage] = useState('tv')
   const [loading, setLoading] = useState(true)
+  const [episodesModal, setEpisodesModal] = useState(false)
+  const [selectedEpisodes, setSelectedEpisodes] = useState([])
+  const [selectedSeriesTitle, setSelectedSeriesTitle] = useState('')
 
   const authHeaders = useMemo(() => {
     return {
@@ -389,31 +392,9 @@ function ClientPanel({
       item.episodeList &&
       item.episodeList.length > 1
     ) {
-      const options =
-        item.episodeList.map(
-          (ep, index) =>
-            `${index + 1} - ${ep.title}`
-        )
-
-      const selected =
-        prompt(
-          `Escolha o episódio:\n\n${options.join(
-            '\n'
-          )}`
-        )
-
-      const selectedIndex =
-        parseInt(selected) - 1
-
-      if (
-        !isNaN(selectedIndex) &&
-        item.episodeList[selectedIndex]
-      ) {
-        openPlayer(
-          item.episodeList[selectedIndex]
-        )
-      }
-
+      setSelectedEpisodes(item.episodeList)
+      setSelectedSeriesTitle(item.title)
+      setEpisodesModal(true)
       return
     }
 
@@ -737,6 +718,50 @@ function ClientPanel({
             setPlayerOpen(false)
           }
         />
+
+        {episodesModal && (
+          <div style={styles.episodesOverlay}>
+            <div style={styles.episodesModal}>
+              <div style={styles.episodesHeader}>
+                <h2 style={{ margin: 0 }}>
+                  {selectedSeriesTitle}
+                </h2>
+
+                <button
+                  style={styles.closeEpisodesButton}
+                  onClick={() =>
+                    setEpisodesModal(false)
+                  }
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div style={styles.episodesList}>
+                {selectedEpisodes.map(
+                  (ep, index) => (
+                    <button
+                      key={index}
+                      style={styles.episodeItem}
+                      onClick={() => {
+                        openPlayer(ep)
+                        setEpisodesModal(false)
+                      }}
+                    >
+                      <span>
+                        Episódio {index + 1}
+                      </span>
+
+                      <small>
+                        {ep.title}
+                      </small>
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   )
@@ -1115,6 +1140,74 @@ const styles = {
     cursor: 'pointer',
     marginTop: 10,
     fontSize: 12
+  },
+
+  episodesOverlay: {
+    position: 'fixed',
+    inset: 0,
+    background:
+      'rgba(0,0,0,0.82)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 9999
+  },
+
+  episodesModal: {
+    width: '90%',
+    maxWidth: 700,
+    maxHeight: '80vh',
+    background:
+      'linear-gradient(180deg,#07142b,#020617)',
+    borderRadius: 24,
+    padding: 20,
+    overflow: 'hidden',
+    border:
+      '1px solid rgba(56,189,248,0.25)'
+  },
+
+  episodesHeader: {
+    display: 'flex',
+    justifyContent:
+      'space-between',
+    alignItems: 'center',
+    marginBottom: 20
+  },
+
+  closeEpisodesButton: {
+    background: '#ef4444',
+    border: 'none',
+    color: '#fff',
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    cursor: 'pointer',
+    fontSize: 18,
+    fontWeight: 'bold'
+  },
+
+  episodesList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+    overflowY: 'auto',
+    maxHeight: '60vh',
+    paddingRight: 6
+  },
+
+  episodeItem: {
+    background:
+      'rgba(15,23,42,0.95)',
+    border:
+      '1px solid rgba(56,189,248,0.15)',
+    color: '#fff',
+    borderRadius: 14,
+    padding: 14,
+    cursor: 'pointer',
+    textAlign: 'left',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 5
   }
 }
 
