@@ -335,6 +335,38 @@ function AdminChannels() {
   }
 
   async function removeAllChannels() {
+  if (
+    !confirm(
+      'APAGAR TODOS OS CANAIS?'
+    )
+  )
+    return
+
+  try {
+    setLoading(true)
+
+    await axios.delete(
+      `${API}/channels-clear`,
+      authHeaders
+    )
+
+    setChannels([])
+
+    alert(
+      'Todos canais removidos'
+    )
+  } catch (err) {
+    console.log(err)
+
+    alert(
+      err.response?.data
+        ?.error ||
+        'Erro ao limpar canais'
+    )
+  } finally {
+    setLoading(false)
+  }
+}
     if (
       !confirm(
         'APAGAR TODOS OS CANAIS?'
