@@ -7,12 +7,16 @@ import { XMLParser } from 'fast-xml-parser'
 
 dotenv.config()
 
-const TMDB_API_KEY = process.env.TMDB_API_KEY || 'd7d6f05500f868564751a589e219be96'
+const TMDB_API_KEY =
+  process.env.TMDB_API_KEY ||
+  'd7d6f05500f868564751a589e219be96'
 
 async function fetchTMDBPoster(title) {
   try {
     const response = await fetch(
-      `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=pt-BR&query=${encodeURIComponent(title)}`
+      `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=pt-BR&query=${encodeURIComponent(
+        title
+      )}`
     )
 
     const data = await response.json()
@@ -22,10 +26,16 @@ async function fetchTMDBPoster(title) {
     const movie = data.results[0]
 
     return {
-      poster: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : '',
-      banner: movie.backdrop_path ? `https://image.tmdb.org/t/p/original${movie.backdrop_path}` : '',
+      poster: movie.poster_path
+        ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
+        : '',
+      banner: movie.backdrop_path
+        ? `https://image.tmdb.org/t/p/original${movie.backdrop_path}`
+        : '',
       overview: movie.overview || '',
-      year: movie.release_date ? movie.release_date.substring(0, 4) : ''
+      year: movie.release_date
+        ? movie.release_date.substring(0, 4)
+        : ''
     }
   } catch (err) {
     console.log('TMDB ERROR:', err.message)
@@ -38,11 +48,15 @@ const { Pool } = pg
 const app = express()
 const PORT = process.env.PORT || 3000
 const JWT_SECRET = 'iptv_panel_secret_2026'
-const EPG_URL = 'https://raw.githubusercontent.com/matthuisman/i.mjh.nz/master/PlutoTV/br.xml'
+const EPG_URL =
+  'https://raw.githubusercontent.com/matthuisman/i.mjh.nz/master/PlutoTV/br.xml'
 
-app.use(cors({
-  origin: '*'
-}))
+app.use(
+  cors({
+    origin: '*'
+  })
+)
+
 app.use(express.json({ limit: '50mb' }))
 
 const pool = new Pool({
@@ -64,10 +78,21 @@ async function initDb() {
     )
   `)
 
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS credits INTEGER DEFAULT 0`)
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free'`)
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS max_connections INTEGER DEFAULT 1`)
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP`)
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS credits INTEGER DEFAULT 0
+  `)
+
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free'
+  `)
+
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS max_connections INTEGER DEFAULT 1
+  `)
+
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP
+  `)
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS channels (
@@ -132,7 +157,9 @@ function auth(req, res, next) {
   const header = req.headers.authorization
 
   if (!header) {
-    return res.status(401).json({ error: 'token inválido' })
+    return res.status(401).json({
+      error: 'token inválido'
+    })
   }
 
   const token = header.replace('Bearer ', '')
@@ -141,13 +168,17 @@ function auth(req, res, next) {
     req.user = jwt.verify(token, JWT_SECRET)
     next()
   } catch {
-    return res.status(401).json({ error: 'token inválido' })
+    return res.status(401).json({
+      error: 'token inválido'
+    })
   }
 }
 
 function adminOnly(req, res, next) {
   if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'somente admin' })
+    return res.status(403).json({
+      error: 'somente admin'
+    })
   }
 
   next()
@@ -187,6 +218,69 @@ function normalizeGithubUrl(url) {
   return url
 }
 
+async function fetchM3UText(playlistUrl) {
+  const fixedUrl =
+    normalizeGithubUrl(playlistUrl)
+
+  const controller =
+    new AbortController()
+
+  const timeout =
+    setTimeout(() => {
+      controller.abort()
+    }, 90000)
+
+  try {
+    const response =
+      await fetch(fixedUrl, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: controller.signal,
+        headers: {
+          Accept: '*/*',
+          Connection: 'keep-alive',
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36'
+        }
+      })
+
+    clearTimeout(timeout)
+
+    if (!response.ok) {
+      throw new Error(
+        `HTTP ${response.status}`
+      )
+    }
+
+    const text =
+      await response.text()
+
+    if (!text.includes('#EXTINF')) {
+      console.log(
+        'RETORNO INVALIDO:',
+        text.slice(0, 500)
+      )
+
+      throw new Error(
+        'M3U inválida ou lista expirada'
+      )
+    }
+
+    return text
+  } catch (err) {
+    clearTimeout(timeout)
+
+    console.log(
+      'ERRO FETCH M3U:',
+      err.message
+    )
+
+    throw err
+  }
+}
+
 function parseM3U(text) {
   const lines = text.split('\n')
   const channels = []
@@ -197,14 +291,27 @@ function parseM3U(text) {
     if (!line) continue
 
     if (line.startsWith('#EXTINF')) {
-      const nameMatch = line.match(/,(.*)$/)
-      const logoMatch = line.match(/tvg-logo="([^"]*)"/)
-      const groupMatch = line.match(/group-title="([^"]*)"/)
+      const nameMatch =
+        line.match(/,(.*)$/)
+
+      const logoMatch =
+        line.match(/tvg-logo="([^"]*)"/)
+
+      const groupMatch =
+        line.match(/group-title="([^"]*)"/)
 
       current = {
-        name: nameMatch ? nameMatch[1].trim() : 'Canal IPTV',
-        logo: logoMatch ? logoMatch[1].trim() : '',
-        category: groupMatch ? groupMatch[1].trim() : 'Outros'
+        name: nameMatch
+          ? nameMatch[1].trim()
+          : 'Canal IPTV',
+
+        logo: logoMatch
+          ? logoMatch[1].trim()
+          : '',
+
+        category: groupMatch
+          ? groupMatch[1].trim()
+          : 'Outros'
       }
 
       continue
@@ -224,19 +331,8 @@ function parseM3U(text) {
 }
 
 async function importM3UFromUrl(playlistUrl) {
-  const fixedUrl = normalizeGithubUrl(playlistUrl)
-
-  const response = await fetch(fixedUrl, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 IPTV PANEL'
-    }
-  })
-
-  if (!response.ok) throw new Error('Erro ao baixar lista')
-
-  const text = await response.text()
-
-  if (!text.includes('#EXTINF')) throw new Error('M3U inválida')
+  const text =
+    await fetchM3UText(playlistUrl)
 
   return parseM3U(text)
 }
@@ -246,28 +342,29 @@ async function saveChannels(channels) {
 
   for (const channel of channels) {
     try {
-      const result = await pool.query(
-        `
-        INSERT INTO channels
-        (
-          name,
-          url,
-          category,
-          logo,
-          is_online
+      const result =
+        await pool.query(
+          `
+          INSERT INTO channels
+          (
+            name,
+            url,
+            category,
+            logo,
+            is_online
+          )
+          VALUES ($1,$2,$3,$4,true)
+          ON CONFLICT (url)
+          DO NOTHING
+          RETURNING id
+          `,
+          [
+            channel.name,
+            channel.url,
+            channel.category,
+            channel.logo
+          ]
         )
-        VALUES ($1,$2,$3,$4,true)
-        ON CONFLICT (url)
-        DO NOTHING
-        RETURNING id
-        `,
-        [
-          channel.name,
-          channel.url,
-          channel.category,
-          channel.logo
-        ]
-      )
 
       if (result.rows.length > 0) added++
     } catch (err) {
@@ -290,56 +387,53 @@ function cleanTitle(title = '') {
 }
 
 function isBadMovieItem(movie) {
-  const title = (movie.title || '').toLowerCase()
-  const category = (movie.category || '').toLowerCase()
-  const image = (movie.image || '').toLowerCase()
-  const video = (movie.video || '').toLowerCase()
+  const title =
+    (movie.title || '').toLowerCase()
+
+  const category =
+    (movie.category || '').toLowerCase()
+
+  const image =
+    (movie.image || '').toLowerCase()
+
+  const video =
+    (movie.video || '').toLowerCase()
 
   const badWords = [
-  'tv',
-  'channel',
-  'canal',
-  'live',
-  'ao vivo',
-  '24h',
-  '24/7',
-  'news',
-  'sports',
-  'sport',
-  'music',
-  'radio',
-  'record',
-  'globo',
-  'sbt',
-  'band',
-  'cnn',
-  'fox',
-  'pbs',
-  'nbc',
-  'abc',
-  'cbs',
-  'pluto',
-  'rakuten',
-  'vix',
-  'plex',
-  'free tv',
-  'iptv',
-  'vo',
+    'tv',
+    'channel',
+    'canal',
+    'live',
+    'ao vivo',
+    '24h',
+    '24/7',
+    'news',
+    'sports',
+    'sport',
+    'music',
+    'radio',
+    'record',
+    'globo',
+    'sbt',
+    'band',
+    'cnn',
+    'fox',
+    'pbs',
+    'nbc',
+    'abc',
+    'cbs',
+    'pluto',
+    'rakuten',
+    'vix',
+    'plex',
+    'free tv',
+    'iptv',
+    'vo',
     'ivs',
     'test',
     'teste',
     'demo',
     'backup',
-    'channel',
-    'canal',
-    'news',
-    'sport',
-    'sports',
-    'music',
-    'radio',
-    'live',
-    'ao vivo',
-    '24/7',
     'camera',
     'webcam',
     'xxx',
@@ -348,42 +442,7 @@ function isBadMovieItem(movie) {
   ]
 
   const blockedWords = [
-'cine',
-'cinema',
-'vision',
-'drama',
-'novela',
-'documentary',
-'documentario',
-'telecine',
-'paramount',
-'rakuten',
-'pluto',
-'runtime',
-'freecine',
-'record tv',
-'tv record',
-'world tv',
-'canal tv',
-'vision tv',
-'crime tv',
-'music tv',
-'news tv',
-'prime tv',
-'family tv',
-'kids tv',
-'fashion tv',
-'travel tv',
-'comedy tv',
-'series tv',
-'movie tv',
-'filmes tv',
-'series premium',
-'filmes premium',
-'epg',
-'vod',
-'vod tv',
-'arab',
+    'arab',
     'al ',
     'quran',
     'islam',
@@ -471,7 +530,11 @@ function isBadMovieItem(movie) {
 
 app.post('/register', async (req, res) => {
   try {
-    const { name, email, password } = req.body
+    const {
+      name,
+      email,
+      password
+    } = req.body
 
     await pool.query(
       `
@@ -495,55 +558,76 @@ app.post('/register', async (req, res) => {
       ]
     )
 
-    res.json({ success: true })
+    res.json({
+      success: true
+    })
   } catch (err) {
     console.log(err)
-    res.status(500).json({ error: 'erro ao criar conta' })
+
+    res.status(500).json({
+      error: 'erro ao criar conta'
+    })
   }
 })
 
 app.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body
+    const {
+      email,
+      password
+    } = req.body
 
-    const result = await pool.query(
-      `
-      SELECT *
-      FROM users
-      WHERE email = $1
-      `,
-      [email]
-    )
+    const result =
+      await pool.query(
+        `
+        SELECT *
+        FROM users
+        WHERE email = $1
+        `,
+        [email]
+      )
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'login inválido' })
+      return res.status(401).json({
+        error: 'login inválido'
+      })
     }
 
     const user = result.rows[0]
 
     if (user.password !== password) {
-      return res.status(401).json({ error: 'senha inválida' })
+      return res.status(401).json({
+        error: 'senha inválida'
+      })
     }
 
     if (user.status && user.status !== 'active') {
-      return res.status(403).json({ error: 'conta bloqueada' })
+      return res.status(403).json({
+        error: 'conta bloqueada'
+      })
     }
 
-    if (user.expires_at && new Date(user.expires_at) < new Date()) {
-      return res.status(403).json({ error: 'login expirado' })
+    if (
+      user.expires_at &&
+      new Date(user.expires_at) < new Date()
+    ) {
+      return res.status(403).json({
+        error: 'login expirado'
+      })
     }
 
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        role: user.role
-      },
-      JWT_SECRET,
-      {
-        expiresIn: '7d'
-      }
-    )
+    const token =
+      jwt.sign(
+        {
+          id: user.id,
+          email: user.email,
+          role: user.role
+        },
+        JWT_SECRET,
+        {
+          expiresIn: '7d'
+        }
+      )
 
     res.json({
       token,
@@ -551,26 +635,30 @@ app.post('/login', async (req, res) => {
     })
   } catch (err) {
     console.log(err)
-    res.status(500).json({ error: 'erro login' })
+
+    res.status(500).json({
+      error: 'erro login'
+    })
   }
 })
 
 app.get('/admin/users', auth, adminOnly, async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT
-        id,
-        name,
-        email,
-        role,
-        status,
-        plan,
-        max_connections,
-        expires_at,
-        credits
-      FROM users
-      ORDER BY id DESC
-    `)
+    const result =
+      await pool.query(`
+        SELECT
+          id,
+          name,
+          email,
+          role,
+          status,
+          plan,
+          max_connections,
+          expires_at,
+          credits
+        FROM users
+        ORDER BY id DESC
+      `)
 
     res.json(result.rows)
   } catch (err) {
@@ -584,37 +672,49 @@ app.get('/admin/users', auth, adminOnly, async (req, res) => {
 
 app.patch('/admin/users/:id', auth, adminOnly, async (req, res) => {
   try {
-    const { role, status, plan, max_connections, expires_at, credits } = req.body
+    const {
+      role,
+      status,
+      plan,
+      max_connections,
+      expires_at,
+      credits
+    } = req.body
+
     const { id } = req.params
 
-    const result = await pool.query(
-      `
-      UPDATE users
-      SET
-        role = COALESCE($1, role),
-        status = COALESCE($2, status),
-        plan = COALESCE($3, plan),
-        max_connections = COALESCE($4, max_connections),
-        expires_at = COALESCE($5, expires_at),
-        credits = COALESCE($6, credits)
-      WHERE id = $7
-      RETURNING id, name, email, role, status, plan, max_connections, expires_at, credits
-      `,
-      [
-        role,
-        status,
-        plan,
-        max_connections,
-        expires_at,
-        credits,
-        id
-      ]
-    )
+    const result =
+      await pool.query(
+        `
+        UPDATE users
+        SET
+          role = COALESCE($1, role),
+          status = COALESCE($2, status),
+          plan = COALESCE($3, plan),
+          max_connections = COALESCE($4, max_connections),
+          expires_at = COALESCE($5, expires_at),
+          credits = COALESCE($6, credits)
+        WHERE id = $7
+        RETURNING id, name, email, role, status, plan, max_connections, expires_at, credits
+        `,
+        [
+          role,
+          status,
+          plan,
+          max_connections,
+          expires_at,
+          credits,
+          id
+        ]
+      )
 
     res.json(result.rows[0])
   } catch (err) {
     console.log(err)
-    res.status(500).json({ error: 'erro ao atualizar usuário' })
+
+    res.status(500).json({
+      error: 'erro ao atualizar usuário'
+    })
   }
 })
 
@@ -622,45 +722,53 @@ app.patch('/admin/users/:id/add-30-days', auth, adminOnly, async (req, res) => {
   try {
     const { id } = req.params
 
-    const result = await pool.query(
-      `
-      UPDATE users
-      SET expires_at =
-        CASE
-          WHEN expires_at IS NULL OR expires_at < NOW()
-          THEN NOW() + INTERVAL '30 days'
-          ELSE expires_at + INTERVAL '30 days'
-        END
-      WHERE id = $1
-      RETURNING id, name, email, expires_at
-      `,
-      [id]
-    )
+    const result =
+      await pool.query(
+        `
+        UPDATE users
+        SET expires_at =
+          CASE
+            WHEN expires_at IS NULL OR expires_at < NOW()
+            THEN NOW() + INTERVAL '30 days'
+            ELSE expires_at + INTERVAL '30 days'
+          END
+        WHERE id = $1
+        RETURNING id, name, email, expires_at
+        `,
+        [id]
+      )
 
     res.json(result.rows[0])
   } catch (err) {
     console.log(err)
-    res.status(500).json({ error: 'erro ao adicionar 30 dias' })
+
+    res.status(500).json({
+      error: 'erro ao adicionar 30 dias'
+    })
   }
 })
 
 app.get('/admin/credits', auth, adminOnly, async (req, res) => {
   try {
-    const result = await pool.query(
-      `
-      SELECT credits
-      FROM users
-      WHERE id = $1
-      `,
-      [req.user.id]
-    )
+    const result =
+      await pool.query(
+        `
+        SELECT credits
+        FROM users
+        WHERE id = $1
+        `,
+        [req.user.id]
+      )
 
     res.json({
       credits: result.rows[0]?.credits || 0
     })
   } catch (err) {
     console.log(err)
-    res.status(500).json({ error: 'erro ao buscar créditos' })
+
+    res.status(500).json({
+      error: 'erro ao buscar créditos'
+    })
   }
 })
 
@@ -668,46 +776,55 @@ app.post('/admin/credits/add', auth, adminOnly, async (req, res) => {
   try {
     const { amount } = req.body
 
-    const value = Number(amount || 0)
+    const value =
+      Number(amount || 0)
 
     if (value <= 0) {
-      return res.status(400).json({ error: 'quantidade inválida' })
+      return res.status(400).json({
+        error: 'quantidade inválida'
+      })
     }
 
-    const result = await pool.query(
-      `
-      UPDATE users
-      SET credits = credits + $1
-      WHERE id = $2
-      RETURNING credits
-      `,
-      [
-        value,
-        req.user.id
-      ]
-    )
+    const result =
+      await pool.query(
+        `
+        UPDATE users
+        SET credits = credits + $1
+        WHERE id = $2
+        RETURNING credits
+        `,
+        [
+          value,
+          req.user.id
+        ]
+      )
 
     res.json({
       credits: result.rows[0].credits
     })
   } catch (err) {
     console.log(err)
-    res.status(500).json({ error: 'erro ao adicionar créditos' })
+
+    res.status(500).json({
+      error: 'erro ao adicionar créditos'
+    })
   }
 })
 
 app.post('/admin/users/create-random', auth, adminOnly, async (req, res) => {
   try {
-    const admin = await pool.query(
-      `
-      SELECT credits
-      FROM users
-      WHERE id = $1
-      `,
-      [req.user.id]
-    )
+    const admin =
+      await pool.query(
+        `
+        SELECT credits
+        FROM users
+        WHERE id = $1
+        `,
+        [req.user.id]
+      )
 
-    const credits = Number(admin.rows[0]?.credits || 0)
+    const credits =
+      Number(admin.rows[0]?.credits || 0)
 
     if (credits <= 0) {
       return res.status(400).json({
@@ -715,32 +832,34 @@ app.post('/admin/users/create-random', auth, adminOnly, async (req, res) => {
       })
     }
 
-    const login = generateRandomLogin(
-      req.body.name
-    )
-
-    const result = await pool.query(
-      `
-      INSERT INTO users
-      (
-        name,
-        email,
-        password,
-        role,
-        status,
-        plan,
-        max_connections,
-        expires_at
+    const login =
+      generateRandomLogin(
+        req.body.name
       )
-      VALUES ($1,$2,$3,'client','active','premium',1,NOW() + INTERVAL '30 days')
-      RETURNING id, name, email, role, status, plan, max_connections, expires_at
-      `,
-      [
-        login.name,
-        login.email,
-        login.password
-      ]
-    )
+
+    const result =
+      await pool.query(
+        `
+        INSERT INTO users
+        (
+          name,
+          email,
+          password,
+          role,
+          status,
+          plan,
+          max_connections,
+          expires_at
+        )
+        VALUES ($1,$2,$3,'client','active','premium',1,NOW() + INTERVAL '30 days')
+        RETURNING id, name, email, role, status, plan, max_connections, expires_at
+        `,
+        [
+          login.name,
+          login.email,
+          login.password
+        ]
+      )
 
     await pool.query(
       `
@@ -763,7 +882,9 @@ app.post('/admin/users/create-random', auth, adminOnly, async (req, res) => {
     console.log('ERRO CREATE RANDOM:', err)
 
     res.status(500).json({
-      error: err.message || 'erro ao criar login aleatório'
+      error:
+        err.message ||
+        'erro ao criar login aleatório'
     })
   }
 })
@@ -791,22 +912,25 @@ app.delete('/admin/users/:id', auth, adminOnly, async (req, res) => {
     })
   } catch (err) {
     console.log(err)
+
     res.status(500).json({
       error: 'erro ao excluir usuário'
     })
   }
 })
+
 app.get('/me', auth, async (req, res) => {
   try {
-    const result = await pool.query(
-      `
-      SELECT *
-      FROM users
-      WHERE id = $1
-      LIMIT 1
-      `,
-      [req.user.id]
-    )
+    const result =
+      await pool.query(
+        `
+        SELECT *
+        FROM users
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [req.user.id]
+      )
 
     if (result.rows.length === 0) {
       return res.status(401).json({
@@ -815,11 +939,6 @@ app.get('/me', auth, async (req, res) => {
     }
 
     const user = result.rows[0]
-
-    console.log('VALIDANDO USUARIO:')
-    console.log(user.email)
-    console.log('STATUS:', user.status)
-    console.log('EXPIRES:', user.expires_at)
 
     if (String(user.status).trim() !== 'active') {
       return res.status(403).json({
@@ -858,22 +977,31 @@ app.get('/me', auth, async (req, res) => {
 
 app.get('/channels', auth, async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT *
-      FROM channels
-      ORDER BY name ASC
-    `)
+    const result =
+      await pool.query(`
+        SELECT *
+        FROM channels
+        ORDER BY name ASC
+      `)
 
     res.json(result.rows)
   } catch (err) {
     console.log(err)
-    res.status(500).json({ error: 'erro canais' })
+
+    res.status(500).json({
+      error: 'erro canais'
+    })
   }
 })
 
 app.post('/channels', auth, async (req, res) => {
   try {
-    const { name, url, category, logo } = req.body
+    const {
+      name,
+      url,
+      category,
+      logo
+    } = req.body
 
     await pool.query(
       `
@@ -897,10 +1025,15 @@ app.post('/channels', auth, async (req, res) => {
       ]
     )
 
-    res.json({ success: true })
+    res.json({
+      success: true
+    })
   } catch (err) {
     console.log(err)
-    res.status(500).json({ error: 'erro ao adicionar canal' })
+
+    res.status(500).json({
+      error: 'erro ao adicionar canal'
+    })
   }
 })
 
@@ -914,10 +1047,15 @@ app.delete('/channels/:id', auth, async (req, res) => {
       [req.params.id]
     )
 
-    res.json({ success: true })
+    res.json({
+      success: true
+    })
   } catch (err) {
     console.log(err)
-    res.status(500).json({ error: 'erro ao remover canal' })
+
+    res.status(500).json({
+      error: 'erro ao remover canal'
+    })
   }
 })
 
@@ -933,21 +1071,28 @@ app.delete('/channels-clear', auth, adminOnly, async (req, res) => {
     })
   } catch (err) {
     console.log(err)
+
     res.status(500).json({
       error: 'erro ao limpar canais'
     })
   }
 })
+
 app.post('/import-m3u', auth, async (req, res) => {
   try {
     const { url } = req.body
 
     if (!url) {
-      return res.status(400).json({ error: 'url obrigatória' })
+      return res.status(400).json({
+        error: 'url obrigatória'
+      })
     }
 
-    const channels = await importM3UFromUrl(url)
-    const added = await saveChannels(channels)
+    const channels =
+      await importM3UFromUrl(url)
+
+    const added =
+      await saveChannels(channels)
 
     res.json({
       success: true,
@@ -956,31 +1101,50 @@ app.post('/import-m3u', auth, async (req, res) => {
     })
   } catch (err) {
     console.log(err)
-    res.status(500).json({ error: 'erro ao importar M3U' })
+
+    res.status(500).json({
+      error:
+        err.message ||
+        'erro ao importar M3U'
+    })
   }
 })
 
 app.get('/movies', auth, async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT *
-      FROM movies
-      ORDER BY id DESC
-    `)
+    const result =
+      await pool.query(`
+        SELECT *
+        FROM movies
+        ORDER BY id DESC
+      `)
 
     res.json(result.rows)
   } catch (err) {
     console.log(err)
-    res.status(500).json({ error: 'erro filmes' })
+
+    res.status(500).json({
+      error: 'erro filmes'
+    })
   }
 })
 
 app.post('/movies', auth, adminOnly, async (req, res) => {
   try {
-    const { title, year, category, image, banner, video, description } = req.body
+    const {
+      title,
+      year,
+      category,
+      image,
+      banner,
+      video,
+      description
+    } = req.body
 
     if (!title || !video) {
-      return res.status(400).json({ error: 'titulo e video obrigatorios' })
+      return res.status(400).json({
+        error: 'titulo e video obrigatorios'
+      })
     }
 
     await pool.query(
@@ -1008,58 +1172,69 @@ app.post('/movies', auth, adminOnly, async (req, res) => {
       ]
     )
 
-    res.json({ success: true })
+    res.json({
+      success: true
+    })
   } catch (err) {
     console.log(err)
-    res.status(500).json({ error: 'erro criar filme' })
+
+    res.status(500).json({
+      error: 'erro criar filme'
+    })
   }
 })
 
 app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
   try {
-    const { url, type } = req.body
+    const {
+      url,
+      type
+    } = req.body
 
     if (!url) {
-      return res.status(400).json({ error: 'url obrigatória' })
+      return res.status(400).json({
+        error: 'url obrigatória'
+      })
     }
 
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 IPTV PANEL'
-      }
-    })
+    const text =
+      await fetchM3UText(url)
 
-    if (!response.ok) {
-      return res.status(400).json({ error: 'nao foi possivel abrir lista' })
-    }
-
-    const text = await response.text()
-
-    if (!text.includes('#EXTINF')) {
-      return res.status(400).json({ error: 'm3u invalida' })
-    }
-
-    const lines = text.split('\n')
+    const lines =
+      text.split('\n')
 
     let current = null
     let added = 0
     let skipped = 0
 
     for (const lineRaw of lines) {
-      const line = lineRaw.trim()
+      const line =
+        lineRaw.trim()
 
       if (!line) continue
 
       if (line.startsWith('#EXTINF')) {
-        const titleMatch = line.match(/,(.*)$/)
-        const logoMatch = line.match(/tvg-logo="([^"]*)"/)
-        const groupMatch = line.match(/group-title="([^"]*)"/)
+        const titleMatch =
+          line.match(/,(.*)$/)
 
-        let title = titleMatch ? titleMatch[1].trim() : 'VOD'
+        const logoMatch =
+          line.match(/tvg-logo="([^"]*)"/)
 
-        title = cleanTitle(title)
+        const groupMatch =
+          line.match(/group-title="([^"]*)"/)
 
-        const group = groupMatch ? groupMatch[1].toLowerCase() : ''
+        let title =
+          titleMatch
+            ? titleMatch[1].trim()
+            : 'VOD'
+
+        title =
+          cleanTitle(title)
+
+        const group =
+          groupMatch
+            ? groupMatch[1].toLowerCase()
+            : ''
 
         const isSeries =
           type === 'Series' ||
@@ -1075,28 +1250,30 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
           group.includes('filmes') ||
           group.includes('vod')
 
-        const fakeMovie = {
-          title,
-          category: isSeries ? 'Series' : 'Filmes',
-          image: logoMatch ? logoMatch[1] : '',
-          video: ''
-        }
-
         if (!isMovie && !isSeries) {
           current = null
           skipped++
           continue
         }
 
-        const tmdb = await fetchTMDBPoster(title)
+        const tmdb =
+          await fetchTMDBPoster(title)
 
         current = {
           title,
-          image: tmdb?.poster || (logoMatch ? logoMatch[1] : ''),
-          banner: tmdb?.banner || (logoMatch ? logoMatch[1] : ''),
-          description: tmdb?.overview || 'Importado IPTV',
-          year: tmdb?.year || '',
-          category: isSeries ? 'Series' : 'Filmes'
+          image:
+            tmdb?.poster ||
+            (logoMatch ? logoMatch[1] : ''),
+          banner:
+            tmdb?.banner ||
+            (logoMatch ? logoMatch[1] : ''),
+          description:
+            tmdb?.overview ||
+            'Importado IPTV',
+          year:
+            tmdb?.year || '',
+          category:
+            isSeries ? 'Series' : 'Filmes'
         }
 
         continue
@@ -1104,19 +1281,20 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
 
       if (current && line.startsWith('http')) {
         try {
-          const exists = await pool.query(
-            `
-            SELECT id
-            FROM movies
-            WHERE video = $1
-            OR LOWER(title) = LOWER($2)
-            LIMIT 1
-            `,
-            [
-              line,
-              current.title
-            ]
-          )
+          const exists =
+            await pool.query(
+              `
+              SELECT id
+              FROM movies
+              WHERE video = $1
+              OR LOWER(title) = LOWER($2)
+              LIMIT 1
+              `,
+              [
+                line,
+                current.title
+              ]
+            )
 
           if (exists.rows.length > 0) {
             skipped++
@@ -1166,31 +1344,45 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
     })
   } catch (err) {
     console.log(err)
-    res.status(500).json({ error: 'erro importar filmes' })
+
+    res.status(500).json({
+      error:
+        err.message ||
+        'erro importar filmes'
+    })
   }
 })
 
 app.delete('/movies/clean-bad', auth, adminOnly, async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT *
-      FROM movies
-      ORDER BY id ASC
-    `)
+    const result =
+      await pool.query(`
+        SELECT *
+        FROM movies
+        ORDER BY id ASC
+      `)
 
     const movies = result.rows
     const idsToDelete = []
     const seenTitles = new Set()
 
     for (const movie of movies) {
-      const titleKey = (movie.title || '').toLowerCase().trim()
-      const isDuplicate = seenTitles.has(titleKey)
+      const titleKey =
+        (movie.title || '')
+          .toLowerCase()
+          .trim()
+
+      const isDuplicate =
+        seenTitles.has(titleKey)
 
       if (titleKey) {
         seenTitles.add(titleKey)
       }
 
-      if (isDuplicate || isBadMovieItem(movie)) {
+      if (
+        isDuplicate ||
+        isBadMovieItem(movie)
+      ) {
         idsToDelete.push(movie.id)
       }
     }
@@ -1212,7 +1404,10 @@ app.delete('/movies/clean-bad', auth, adminOnly, async (req, res) => {
     })
   } catch (err) {
     console.log('ERRO CLEAN BAD:', err)
-    res.status(500).json({ error: 'erro ao limpar lixo' })
+
+    res.status(500).json({
+      error: 'erro ao limpar lixo'
+    })
   }
 })
 
@@ -1226,10 +1421,15 @@ app.delete('/movies/:id', auth, adminOnly, async (req, res) => {
       [req.params.id]
     )
 
-    res.json({ success: true })
+    res.json({
+      success: true
+    })
   } catch (err) {
     console.log(err)
-    res.status(500).json({ error: 'erro remover filme' })
+
+    res.status(500).json({
+      error: 'erro remover filme'
+    })
   }
 })
 
@@ -1245,23 +1445,30 @@ app.delete('/movies-clear', auth, adminOnly, async (req, res) => {
     })
   } catch (err) {
     console.log(err)
-    res.status(500).json({ error: 'erro ao limpar filmes' })
+
+    res.status(500).json({
+      error: 'erro ao limpar filmes'
+    })
   }
 })
 
 app.get('/series', auth, async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT *
-      FROM movies
-      WHERE category = 'Series'
-      ORDER BY id DESC
-    `)
+    const result =
+      await pool.query(`
+        SELECT *
+        FROM movies
+        WHERE category = 'Series'
+        ORDER BY id DESC
+      `)
 
     res.json(result.rows)
   } catch (err) {
     console.log(err)
-    res.status(500).json({ error: 'erro series' })
+
+    res.status(500).json({
+      error: 'erro series'
+    })
   }
 })
 
