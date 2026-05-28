@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 
 import AdminUsers from './AdminUsers'
@@ -8,25 +8,26 @@ import AdminSeries from './AdminSeries'
 
 const API = 'https://iptv-backend-cuxf.onrender.com'
 
-function AdminPanel({ user, setUser }) {
+function AdminPanel({ user, setUser, logout }) {
   const [adminUsers, setAdminUsers] = useState([])
-  const [channelsCount, setChannelsCount] = useState(0)
-  const [moviesCount, setMoviesCount] = useState(0)
-  const [seriesCount, setSeriesCount] = useState(0)
+
+  const [stats, setStats] = useState({
+    channels: 0,
+    movies: 0,
+    series: 0
+  })
+
+  const [loading, setLoading] = useState(true)
 
   const [page, setPage] = useState('dashboard')
 
-  const authHeaders = {
-    headers: {
-      Authorization: `Bearer ${localStorage.getItem('token')}`
+  const authHeaders = useMemo(() => {
+    return {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      }
     }
-  }
-
-  function logout() {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    setUser(null)
-  }
+  }, [])
 
   async function loadAdminUsers() {
     try {
@@ -35,59 +36,87 @@ function AdminPanel({ user, setUser }) {
         authHeaders
       )
 
-      setAdminUsers(res.data)
+      setAdminUsers(res.data || [])
     } catch (err) {
-      console.log(err)
+      console.log('Erro usuários:', err)
     }
   }
 
   async function loadCounts() {
     try {
-      const channels = await axios.get(`${API}/channels`, authHeaders)
-      const movies = await axios.get(`${API}/movies`, authHeaders)
-      const series = await axios.get(`${API}/series`, authHeaders)
+      const [channels, movies, series] =
+        await Promise.all([
+          axios.get(`${API}/channels`, authHeaders),
+          axios.get(`${API}/movies`, authHeaders),
+          axios.get(`${API}/series`, authHeaders)
+        ])
 
-      setChannelsCount(channels.data.length)
-      setMoviesCount(movies.data.length)
-      setSeriesCount(series.data.length)
+      setStats({
+        channels: channels.data?.length || 0,
+        movies: movies.data?.length || 0,
+        series: series.data?.length || 0
+      })
     } catch (err) {
-      console.log(err)
+      console.log('Erro contadores:', err)
+    }
+  }
+
+  async function loadDashboard() {
+    try {
+      setLoading(true)
+
+      await Promise.all([
+        loadAdminUsers(),
+        loadCounts()
+      ])
+    } finally {
+      setLoading(false)
     }
   }
 
   useEffect(() => {
-    loadAdminUsers()
-    loadCounts()
+    loadDashboard()
   }, [])
 
-  const totalUsers = adminUsers.length
+  const dashboard = useMemo(() => {
+    const totalUsers = adminUsers.length
 
-  const activeUsers =
-    adminUsers.filter(
-      u => u.status === 'active'
-    ).length
+    const activeUsers =
+      adminUsers.filter(
+        user => user.status === 'active'
+      ).length
 
-  const blockedUsers =
-    adminUsers.filter(
-      u => u.status === 'blocked'
-    ).length
+    const blockedUsers =
+      adminUsers.filter(
+        user => user.status === 'blocked'
+      ).length
 
-  const premiumUsers =
-    adminUsers.filter(
-      u => u.plan === 'premium'
-    ).length
+    const premiumUsers =
+      adminUsers.filter(
+        user => user.plan === 'premium'
+      ).length
 
-  const freeUsers =
-    adminUsers.filter(
-      u => u.plan === 'free'
-    ).length
+    const freeUsers =
+      adminUsers.filter(
+        user => user.plan === 'free'
+      ).length
 
-  const totalCredits =
-    adminUsers.reduce(
-      (total, item) =>
-        total + Number(item.credits || 0),
-      0
-    )
+    const totalCredits =
+      adminUsers.reduce(
+        (total, item) =>
+          total + Number(item.credits || 0),
+        0
+      )
+
+    return {
+      totalUsers,
+      activeUsers,
+      blockedUsers,
+      premiumUsers,
+      freeUsers,
+      totalCredits
+    }
+  }, [adminUsers])
 
   return (
     <div style={styles.app}>
@@ -97,11 +126,17 @@ function AdminPanel({ user, setUser }) {
         </h1>
 
         <div style={styles.userBox}>
-          <small style={{ color: '#94a3b8' }}>
+          <small style={styles.userType}>
             ADMINISTRADOR
           </small>
 
-          <h2>{user.name}</h2>
+          <h2 style={styles.userName}>
+            {user?.name}
+          </h2>
+
+          <p style={styles.userEmail}>
+            {user?.email}
+          </p>
         </div>
 
         <div style={styles.menu}>
@@ -174,27 +209,6 @@ function AdminPanel({ user, setUser }) {
           >
             Séries
           </button>
-
-          <button
-            type='button'
-            style={styles.menuButton}
-          >
-            EPG
-          </button>
-
-          <button
-            type='button'
-            style={styles.menuButton}
-          >
-            Financeiro
-          </button>
-
-          <button
-            type='button'
-            style={styles.menuButton}
-          >
-            Revendedores
-          </button>
         </div>
 
         <button
@@ -207,106 +221,167 @@ function AdminPanel({ user, setUser }) {
       </aside>
 
       <main style={styles.main}>
-        {page === 'dashboard' && (
+        {loading ? (
+          <div style={styles.loadingBox}>
+            <div style={styles.loader}></div>
+
+            <h2>Carregando painel...</h2>
+          </div>
+        ) : (
           <>
-            <h1 style={styles.title}>
-              Dashboard Admin
-            </h1>
+            {page === 'dashboard' && (
+              <>
+                <div style={styles.topBar}>
+                  <div>
+                    <h1 style={styles.title}>
+                      Dashboard Admin
+                    </h1>
 
-            <div style={styles.statsGrid}>
-              <div style={styles.blueCard}>
-                <h1>{totalUsers}</h1>
-                <p>Total usuários</p>
-              </div>
+                    <p style={styles.subtitle}>
+                      Controle total do sistema IPTV
+                    </p>
+                  </div>
+                </div>
 
-              <div style={styles.greenCard}>
-                <h1>{activeUsers}</h1>
-                <p>Usuários ativos</p>
-              </div>
+                <div style={styles.statsGrid}>
+                  <div style={styles.cardBlue}>
+                    <h1>
+                      {dashboard.totalUsers}
+                    </h1>
 
-              <div style={styles.redCard}>
-                <h1>{blockedUsers}</h1>
-                <p>Bloqueados</p>
-              </div>
+                    <p>Total usuários</p>
+                  </div>
 
-              <div style={styles.purpleCard}>
-                <h1>{premiumUsers}</h1>
-                <p>Premium</p>
-              </div>
+                  <div style={styles.cardGreen}>
+                    <h1>
+                      {dashboard.activeUsers}
+                    </h1>
 
-              <div style={styles.orangeCard}>
-                <h1>{freeUsers}</h1>
-                <p>Free</p>
-              </div>
+                    <p>Usuários ativos</p>
+                  </div>
 
-              <div style={styles.yellowCard}>
-                <h1>{totalCredits}</h1>
-                <p>Créditos totais</p>
-              </div>
+                  <div style={styles.cardRed}>
+                    <h1>
+                      {dashboard.blockedUsers}
+                    </h1>
 
-              <div style={styles.cyanCard}>
-                <h1>{channelsCount}</h1>
-                <p>Canais IPTV</p>
-              </div>
+                    <p>Bloqueados</p>
+                  </div>
 
-              <div style={styles.movieCard}>
-                <h1>{moviesCount}</h1>
-                <p>Filmes</p>
-              </div>
+                  <div style={styles.cardPurple}>
+                    <h1>
+                      {dashboard.premiumUsers}
+                    </h1>
 
-              <div style={styles.seriesCard}>
-                <h1>{seriesCount}</h1>
-                <p>Séries</p>
-              </div>
-            </div>
+                    <p>Premium</p>
+                  </div>
 
-            <div style={styles.infoBox}>
-              <h2>Sistema IPTV Online</h2>
+                  <div style={styles.cardOrange}>
+                    <h1>
+                      {dashboard.freeUsers}
+                    </h1>
 
-              <p>
-                Backend Render conectado
-              </p>
+                    <p>Free</p>
+                  </div>
 
-              <p>
-                Banco Supabase ativo
-              </p>
+                  <div style={styles.cardYellow}>
+                    <h1>
+                      {dashboard.totalCredits}
+                    </h1>
 
-              <p>
-                Painel admin operacional
-              </p>
+                    <p>Créditos</p>
+                  </div>
 
-              <p>
-                Importador M3U ativo
-              </p>
+                  <div style={styles.cardCyan}>
+                    <h1>
+                      {stats.channels}
+                    </h1>
 
-              <p>
-                Filmes e séries online
-              </p>
-            </div>
+                    <p>Canais IPTV</p>
+                  </div>
+
+                  <div style={styles.cardMovie}>
+                    <h1>
+                      {stats.movies}
+                    </h1>
+
+                    <p>Filmes</p>
+                  </div>
+
+                  <div style={styles.cardSeries}>
+                    <h1>
+                      {stats.series}
+                    </h1>
+
+                    <p>Séries</p>
+                  </div>
+                </div>
+
+                <div style={styles.infoBox}>
+                  <h2 style={styles.infoTitle}>
+                    Sistema Online
+                  </h2>
+
+                  <div style={styles.infoGrid}>
+                    <div style={styles.infoItem}>
+                      Backend Render conectado
+                    </div>
+
+                    <div style={styles.infoItem}>
+                      Banco Supabase ativo
+                    </div>
+
+                    <div style={styles.infoItem}>
+                      Importador M3U online
+                    </div>
+
+                    <div style={styles.infoItem}>
+                      Player HLS funcionando
+                    </div>
+
+                    <div style={styles.infoItem}>
+                      Filmes online
+                    </div>
+
+                    <div style={styles.infoItem}>
+                      Séries online
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {page === 'users' && (
+              <AdminUsers
+                users={adminUsers}
+                reloadUsers={loadAdminUsers}
+              />
+            )}
+
+            {page === 'channels' && (
+              <AdminChannels />
+            )}
+
+            {page === 'movies' && (
+              <AdminMovies />
+            )}
+
+            {page === 'series' && (
+              <AdminSeries />
+            )}
           </>
-        )}
-
-        {page === 'users' && (
-          <AdminUsers
-            users={adminUsers}
-            reloadUsers={loadAdminUsers}
-          />
-        )}
-
-        {page === 'channels' && (
-          <AdminChannels />
-        )}
-
-        {page === 'movies' && (
-          <AdminMovies />
-        )}
-
-        {page === 'series' && (
-          <AdminSeries />
         )}
       </main>
     </div>
   )
+}
+
+const cardBase = {
+  padding: 28,
+  borderRadius: 24,
+  border: '1px solid rgba(255,255,255,0.05)',
+  boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
+  transition: '0.2s'
 }
 
 const styles = {
@@ -319,51 +394,70 @@ const styles = {
   },
 
   sidebar: {
-    width: 300,
-    background: '#021033',
+    width: 280,
+    background: '#020f2d',
     padding: 20,
-    borderRight: '1px solid #10234d',
+    borderRight: '1px solid #0f2248',
     display: 'flex',
     flexDirection: 'column'
   },
 
   logo: {
     color: '#38bdf8',
-    fontSize: 42,
+    fontSize: 34,
     textAlign: 'center',
-    marginBottom: 30
+    marginBottom: 30,
+    fontWeight: 'bold'
   },
 
   userBox: {
-    background: '#0b1736',
+    background:
+      'linear-gradient(180deg,#09152f,#071127)',
     padding: 20,
-    borderRadius: 20,
-    marginBottom: 20
+    borderRadius: 24,
+    marginBottom: 25,
+    border: '1px solid rgba(255,255,255,0.05)'
+  },
+
+  userType: {
+    color: '#94a3b8',
+    fontSize: 12
+  },
+
+  userName: {
+    marginTop: 8,
+    marginBottom: 5
+  },
+
+  userEmail: {
+    color: '#94a3b8',
+    fontSize: 13
   },
 
   menu: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 10,
-    marginBottom: 20
+    gap: 10
   },
 
   menuButton: {
     background: '#07142b',
-    border: 'none',
+    border: '1px solid transparent',
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     color: '#fff',
     cursor: 'pointer',
     fontWeight: 'bold',
-    textAlign: 'left'
+    textAlign: 'left',
+    transition: '0.2s'
   },
 
   activeMenuButton: {
-    background: '#38bdf8',
+    background:
+      'linear-gradient(90deg,#38bdf8,#0ea5e9)',
     border: 'none',
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     color: '#000',
     cursor: 'pointer',
     fontWeight: 'bold',
@@ -373,10 +467,11 @@ const styles = {
   redButton: {
     marginTop: 'auto',
     width: '100%',
-    padding: 14,
+    padding: 15,
     border: 'none',
-    borderRadius: 12,
-    background: '#ef4444',
+    borderRadius: 14,
+    background:
+      'linear-gradient(90deg,#ef4444,#dc2626)',
     color: '#fff',
     fontWeight: 'bold',
     cursor: 'pointer'
@@ -384,12 +479,24 @@ const styles = {
 
   main: {
     flex: 1,
-    padding: 30
+    padding: 30,
+    overflowY: 'auto'
+  },
+
+  topBar: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 30
   },
 
   title: {
     fontSize: 42,
-    marginBottom: 30
+    marginBottom: 5
+  },
+
+  subtitle: {
+    color: '#94a3b8'
   },
 
   statsGrid: {
@@ -399,65 +506,102 @@ const styles = {
     gap: 20
   },
 
-  blueCard: {
-    background: '#0f172a',
-    padding: 30,
-    borderRadius: 24
+  cardBlue: {
+    ...cardBase,
+    background:
+      'linear-gradient(180deg,#0f172a,#111827)'
   },
 
-  greenCard: {
-    background: '#052e16',
-    padding: 30,
-    borderRadius: 24
+  cardGreen: {
+    ...cardBase,
+    background:
+      'linear-gradient(180deg,#052e16,#14532d)'
   },
 
-  redCard: {
-    background: '#450a0a',
-    padding: 30,
-    borderRadius: 24
+  cardRed: {
+    ...cardBase,
+    background:
+      'linear-gradient(180deg,#450a0a,#7f1d1d)'
   },
 
-  purpleCard: {
-    background: '#3b0764',
-    padding: 30,
-    borderRadius: 24
+  cardPurple: {
+    ...cardBase,
+    background:
+      'linear-gradient(180deg,#3b0764,#581c87)'
   },
 
-  orangeCard: {
-    background: '#7c2d12',
-    padding: 30,
-    borderRadius: 24
+  cardOrange: {
+    ...cardBase,
+    background:
+      'linear-gradient(180deg,#7c2d12,#c2410c)'
   },
 
-  yellowCard: {
-    background: '#713f12',
-    padding: 30,
-    borderRadius: 24
+  cardYellow: {
+    ...cardBase,
+    background:
+      'linear-gradient(180deg,#713f12,#a16207)'
   },
 
-  cyanCard: {
-    background: '#083344',
-    padding: 30,
-    borderRadius: 24
+  cardCyan: {
+    ...cardBase,
+    background:
+      'linear-gradient(180deg,#083344,#155e75)'
   },
 
-  movieCard: {
-    background: '#1e1b4b',
-    padding: 30,
-    borderRadius: 24
+  cardMovie: {
+    ...cardBase,
+    background:
+      'linear-gradient(180deg,#1e1b4b,#312e81)'
   },
 
-  seriesCard: {
-    background: '#3f6212',
-    padding: 30,
-    borderRadius: 24
+  cardSeries: {
+    ...cardBase,
+    background:
+      'linear-gradient(180deg,#3f6212,#4d7c0f)'
   },
 
   infoBox: {
     marginTop: 30,
     background: '#07142b',
     padding: 30,
-    borderRadius: 24
+    borderRadius: 24,
+    border: '1px solid rgba(255,255,255,0.05)'
+  },
+
+  infoTitle: {
+    marginBottom: 20
+  },
+
+  infoGrid: {
+    display: 'grid',
+    gridTemplateColumns:
+      'repeat(auto-fit,minmax(250px,1fr))',
+    gap: 15
+  },
+
+  infoItem: {
+    background: '#0b1736',
+    padding: 18,
+    borderRadius: 16,
+    color: '#cbd5e1'
+  },
+
+  loadingBox: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '80vh',
+    gap: 20
+  },
+
+  loader: {
+    width: 60,
+    height: 60,
+    border: '5px solid #0f172a',
+    borderTop: '5px solid #38bdf8',
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite'
   }
 }
 

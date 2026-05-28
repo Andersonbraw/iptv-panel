@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import axios from 'axios'
 
 import Login from './Login'
@@ -9,17 +9,22 @@ const API = 'https://iptv-backend-cuxf.onrender.com'
 
 function App() {
   const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem('user')
-    return savedUser ? JSON.parse(savedUser) : null
+    try {
+      const savedUser = localStorage.getItem('user')
+      return savedUser ? JSON.parse(savedUser) : null
+    } catch {
+      localStorage.removeItem('user')
+      return null
+    }
   })
 
-  function logout() {
+  const logout = useCallback(() => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
     setUser(null)
-  }
+  }, [])
 
-  async function validateSession() {
+  const validateSession = useCallback(async () => {
     const token = localStorage.getItem('token')
 
     if (!token) {
@@ -47,19 +52,19 @@ function App() {
 
       console.log('Erro temporário ao validar sessão:', err.message)
     }
-  }
+  }, [logout])
 
   useEffect(() => {
-    if (!user) return
+    if (!user?.id) return
 
     validateSession()
 
     const interval = setInterval(() => {
       validateSession()
-    }, 5000)
+    }, 30000)
 
     return () => clearInterval(interval)
-  }, [user?.id])
+  }, [user?.id, validateSession])
 
   if (!user) {
     return <Login setUser={setUser} />
@@ -72,6 +77,7 @@ function App() {
       <AdminPanel
         user={user}
         setUser={setUser}
+        logout={logout}
       />
     )
   }
@@ -80,6 +86,7 @@ function App() {
     <ClientPanel
       user={user}
       setUser={setUser}
+      logout={logout}
     />
   )
 }

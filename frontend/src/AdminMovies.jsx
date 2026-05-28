@@ -1,36 +1,69 @@
 import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 
-const API = 'https://iptv-backend-cuxf.onrender.com'
+const API =
+  'https://iptv-backend-cuxf.onrender.com'
+
+const PLACEHOLDER =
+  'https://upload.wikimedia.org/wikipedia/commons/6/65/No-Image-Placeholder.svg'
 
 function AdminMovies() {
-  const [movies, setMovies] = useState([])
-  const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState('Todos')
+  const [movies, setMovies] =
+    useState([])
 
-  const authHeaders = {
-    headers: {
-      Authorization: `Bearer ${localStorage.getItem('token')}`
+  const [search, setSearch] =
+    useState('')
+
+  const [filter, setFilter] =
+    useState('Todos')
+
+  const [loading, setLoading] =
+    useState(false)
+
+  const authHeaders = useMemo(() => {
+    return {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem(
+          'token'
+        )}`
+      }
     }
+  }, [])
+
+  function normalize(text = '') {
+    return text
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
   }
 
   async function loadMovies() {
     try {
+      setLoading(true)
+
       const res = await axios.get(
         `${API}/movies`,
         authHeaders
       )
 
-      setMovies(res.data)
+      setMovies(res.data || [])
     } catch (err) {
       console.log(err)
+
+      alert(
+        'Erro ao carregar filmes'
+      )
+    } finally {
+      setLoading(false)
     }
   }
 
   async function removeMovie(id) {
-    if (!confirm('Remover item?')) {
-      return
-    }
+    const confirmDelete = confirm(
+      'Remover item?'
+    )
+
+    if (!confirmDelete) return
 
     try {
       await axios.delete(
@@ -38,18 +71,27 @@ function AdminMovies() {
         authHeaders
       )
 
-      loadMovies()
+      setMovies(prev =>
+        prev.filter(
+          movie =>
+            movie.id !== id
+        )
+      )
     } catch {
       alert('Erro ao remover')
     }
   }
 
   async function clearAllMovies() {
-    if (!confirm('APAGAR TODOS OS FILMES E SÉRIES?')) {
-      return
-    }
+    const confirmDelete = confirm(
+      'APAGAR TODOS OS FILMES E SÉRIES?'
+    )
+
+    if (!confirmDelete) return
 
     try {
+      setLoading(true)
+
       await axios.delete(
         `${API}/movies-clear`,
         authHeaders
@@ -57,228 +99,331 @@ function AdminMovies() {
 
       alert('Tudo removido')
 
-      loadMovies()
+      setMovies([])
     } catch {
       alert('Erro ao limpar')
+    } finally {
+      setLoading(false)
     }
   }
 
   async function removeBadMovies() {
-  if (!confirm('Remover canais IPTV misturados nos filmes e séries?')) {
-    return
-  }
+    const confirmDelete = confirm(
+      'Remover conteúdos IPTV misturados?'
+    )
 
-  try {
-    const badWords = [
-      'reuters',
-      'trace',
-      'trace latina',
-      'trace urban',
-      'deluxe lounge',
-      'shorts',
-      'planet',
-      'pluto',
-      'channel',
-      'tv',
-      'news',
-      'live',
-      'ao vivo',
-      '24',
-      '24h',
-      'radio',
-      'music',
-      'musica',
-      'cnn',
-      'bbc',
-      'fox',
-      'sport',
-      'sports',
-      'futebol',
-      'soccer',
-      'bein',
-      'espn',
-      'premiere',
-      'combate',
-      'telecine',
-      'globoplay',
-      'sbt',
-      'record',
-      'band',
-      'redetv',
-      'sky',
-      'playlist',
-      'm3u',
-      'nba',
-      'nfl',
-      'ufc',
-      'cartoon',
-      'nick',
-      'mtv',
-      'animal planet',
-      'discovery channel',
-      'nat geo',
-      'hd tv',
-      '4k tv',
-      'sd tv'
-    ]
+    if (!confirmDelete) return
 
-    let removed = 0
+    try {
+      setLoading(true)
 
-    for (const movie of movies) {
+      const badWords = [
+        'reuters',
+        'trace',
+        'pluto',
+        'channel',
+        'tv',
+        'news',
+        'live',
+        'ao vivo',
+        'radio',
+        'music',
+        'cnn',
+        'bbc',
+        'fox',
+        'sport',
+        'sports',
+        'futebol',
+        'espn',
+        'premiere',
+        'combate',
+        'sbt',
+        'record',
+        'band',
+        'redetv',
+        'sky',
+        'playlist',
+        'm3u',
+        'nba',
+        'nfl',
+        'ufc',
+        'cartoon',
+        'nick',
+        'mtv',
+        'animal planet',
+        'discovery channel',
+        'nat geo'
+      ]
 
-      const title = `
-        ${movie.title || ''}
-        ${movie.name || ''}
-        ${movie.category || ''}
-      `.toLowerCase()
+      const toRemove =
+        movies.filter(movie => {
+          const text = normalize(`
+            ${movie.title || ''}
+            ${movie.name || ''}
+            ${movie.category || ''}
+          `)
 
-      const isBad = badWords.some(word =>
-        title.includes(word.toLowerCase())
+          return badWords.some(
+            word =>
+              text.includes(
+                normalize(word)
+              )
+          )
+        })
+
+      await Promise.all(
+        toRemove.map(movie =>
+          axios.delete(
+            `${API}/movies/${movie.id}`,
+            authHeaders
+          )
+        )
       )
 
-      if (isBad) {
+      alert(
+        `Removidos: ${toRemove.length}`
+      )
 
-        await axios.delete(
-          `${API}/movies/${movie.id}`,
-          authHeaders
-        )
-
-        removed++
-      }
+      await loadMovies()
+    } catch (err) {
+      alert(
+        err.response?.data
+          ?.error ||
+          'Erro ao limpar'
+      )
+    } finally {
+      setLoading(false)
     }
-
-    alert(`Removidos: ${removed}`)
-
-    loadMovies()
-
-  } catch (err) {
-
-    alert(
-      err.response?.data?.error ||
-      'Erro ao limpar'
-    )
   }
-}
 
   useEffect(() => {
     loadMovies()
   }, [])
 
-  const filteredMovies = useMemo(() => {
-    return movies.filter(movie => {
-      const title = movie.title?.toLowerCase() || ''
-      const category = movie.category?.toLowerCase() || ''
+  const filteredMovies =
+    useMemo(() => {
+      return movies.filter(
+        movie => {
+          const title =
+            normalize(
+              movie.title || ''
+            )
 
-      const matchesSearch =
-        title.includes(search.toLowerCase())
+          const category =
+            normalize(
+              movie.category ||
+                ''
+            )
 
-      const matchesFilter =
-        filter === 'Todos'
-          ? true
-          : category.includes(filter.toLowerCase())
+          const matchesSearch =
+            title.includes(
+              normalize(search)
+            )
 
-      return matchesSearch && matchesFilter
-    })
-  }, [movies, search, filter])
+          const matchesFilter =
+            filter === 'Todos'
+              ? true
+              : category.includes(
+                  normalize(
+                    filter
+                  )
+                )
+
+          return (
+            matchesSearch &&
+            matchesFilter
+          )
+        }
+      )
+    }, [movies, search, filter])
 
   return (
     <div>
-      <h1 style={styles.title}>
-        Filmes e Séries
-      </h1>
+      <div style={styles.top}>
+        <div>
+          <h1 style={styles.title}>
+            Filmes e Séries
+          </h1>
+
+          <p style={styles.subtitle}>
+            Gerencie conteúdos VOD
+          </p>
+        </div>
+      </div>
 
       <div style={styles.topActions}>
         <input
-          placeholder="Buscar..."
+          placeholder='Buscar...'
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={e =>
+            setSearch(
+              e.target.value
+            )
+          }
           style={styles.searchInput}
         />
 
         <select
           value={filter}
-          onChange={e => setFilter(e.target.value)}
+          onChange={e =>
+            setFilter(
+              e.target.value
+            )
+          }
           style={styles.select}
         >
-          <option>Todos</option>
-          <option>Filmes</option>
-          <option>Series</option>
+          <option>
+            Todos
+          </option>
+
+          <option>
+            Filmes
+          </option>
+
+          <option>
+            Series
+          </option>
         </select>
 
         <button
-          style={styles.cleanButton}
-          onClick={removeBadMovies}
+          style={
+            styles.cleanButton
+          }
+          onClick={
+            removeBadMovies
+          }
         >
-          Remover lixo IPTV
+          Limpar IPTV
         </button>
 
         <button
-          style={styles.clearButton}
-          onClick={clearAllMovies}
+          style={
+            styles.clearButton
+          }
+          onClick={
+            clearAllMovies
+          }
         >
           Limpar tudo
         </button>
       </div>
 
+      {loading && (
+        <div style={styles.loading}>
+          Processando...
+        </div>
+      )}
+
       <div style={styles.totalBox}>
-        Total: {filteredMovies.length}
+        Total encontrados:{' '}
+        {
+          filteredMovies.length
+        }
       </div>
 
       <div style={styles.grid}>
-        {filteredMovies.map(movie => (
-          <div
-            key={movie.id}
-            style={styles.card}
-          >
-            <img
-              src={
-                movie.image &&
-                movie.image.startsWith('http')
-                  ? movie.image
-                  : 'https://upload.wikimedia.org/wikipedia/commons/6/65/No-Image-Placeholder.svg'
-              }
-              style={styles.poster}
-            />
+        {filteredMovies.map(
+          movie => (
+            <div
+              key={movie.id}
+              style={styles.card}
+            >
+              <img
+                loading='lazy'
+                src={
+                  movie.image?.startsWith(
+                    'http'
+                  )
+                    ? movie.image
+                    : PLACEHOLDER
+                }
+                alt={
+                  movie.title
+                }
+                style={
+                  styles.poster
+                }
+                onError={e => {
+                  e.currentTarget.src =
+                    PLACEHOLDER
+                }}
+              />
 
-            <div style={styles.overlay}>
-              <h3 style={styles.movieTitle}>
-                {movie.title}
-              </h3>
-
-              <p style={styles.movieInfo}>
-                {movie.year} • {movie.category}
-              </p>
-
-              <button
-                style={styles.deleteButton}
-                onClick={() => removeMovie(movie.id)}
+              <div
+                style={
+                  styles.overlay
+                }
               >
-                Remover
-              </button>
+                <div>
+                  <h3
+                    style={
+                      styles.movieTitle
+                    }
+                  >
+                    {
+                      movie.title
+                    }
+                  </h3>
+
+                  <p
+                    style={
+                      styles.movieInfo
+                    }
+                  >
+                    {movie.year ||
+                      'VOD'}{' '}
+                    •{' '}
+                    {movie.category ||
+                      'Filmes'}
+                  </p>
+                </div>
+
+                <button
+                  style={
+                    styles.deleteButton
+                  }
+                  onClick={() =>
+                    removeMovie(
+                      movie.id
+                    )
+                  }
+                >
+                  Remover
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        )}
       </div>
     </div>
   )
 }
 
 const styles = {
+  top: {
+    marginBottom: 20
+  },
+
   title: {
     fontSize: 38,
-    marginBottom: 20
+    marginBottom: 6
+  },
+
+  subtitle: {
+    color: '#94a3b8'
   },
 
   topActions: {
     display: 'grid',
-    gridTemplateColumns: '2fr 1fr 1fr 1fr',
+    gridTemplateColumns:
+      '2fr 1fr 1fr 1fr',
     gap: 12,
     marginBottom: 20
   },
 
   searchInput: {
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     border: 'none',
     background: '#07142b',
     color: '#fff'
@@ -286,7 +431,7 @@ const styles = {
 
   select: {
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     border: 'none',
     background: '#07142b',
     color: '#fff'
@@ -294,8 +439,9 @@ const styles = {
 
   cleanButton: {
     border: 'none',
-    borderRadius: 12,
-    background: '#f59e0b',
+    borderRadius: 14,
+    background:
+      'linear-gradient(90deg,#f59e0b,#d97706)',
     color: '#000',
     fontWeight: 'bold',
     cursor: 'pointer'
@@ -303,18 +449,31 @@ const styles = {
 
   clearButton: {
     border: 'none',
-    borderRadius: 12,
-    background: '#ef4444',
+    borderRadius: 14,
+    background:
+      'linear-gradient(90deg,#ef4444,#dc2626)',
     color: '#fff',
     fontWeight: 'bold',
     cursor: 'pointer'
   },
 
+  loading: {
+    background: '#020617',
+    border:
+      '1px solid #12345f',
+    padding: 14,
+    borderRadius: 14,
+    marginBottom: 20,
+    color: '#38bdf8',
+    fontWeight: 'bold'
+  },
+
   totalBox: {
     background: '#020617',
-    border: '1px solid #12345f',
+    border:
+      '1px solid #12345f',
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     marginBottom: 20,
     color: '#38bdf8',
     fontWeight: 'bold'
@@ -322,44 +481,67 @@ const styles = {
 
   grid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-    gap: 20
+    gridTemplateColumns:
+      'repeat(auto-fill,minmax(165px,1fr))',
+    gap: 14
   },
 
   card: {
-    background: '#07142b',
+    position: 'relative',
     borderRadius: 18,
-    overflow: 'hidden'
+    overflow: 'hidden',
+    background: '#020617',
+    border:
+      '1px solid rgba(255,255,255,0.05)',
+    transition: '0.25s',
+    cursor: 'pointer'
   },
 
   poster: {
     width: '100%',
-    height: 340,
+    height: 250,
     objectFit: 'cover',
-    background: '#020617'
+    background: '#020617',
+    display: 'block'
   },
 
   overlay: {
-    padding: 14
+    position: 'absolute',
+    inset: 0,
+    background:
+      'linear-gradient(to top,rgba(0,0,0,0.95),rgba(0,0,0,0.15))',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'flex-end',
+    padding: 12,
+    opacity: 0.95
   },
 
   movieTitle: {
-    margin: 0
+    margin: 0,
+    fontSize: 16,
+    lineHeight: '18px',
+    minHeight: 36
   },
 
   movieInfo: {
-    color: '#cbd5e1'
+    color: '#cbd5e1',
+    marginTop: 5,
+    fontSize: 12
   },
 
   deleteButton: {
     width: '100%',
-    padding: 12,
+    padding: 9,
     border: 'none',
     borderRadius: 10,
-    background: '#ef4444',
+    background:
+      'linear-gradient(90deg,#ef4444,#dc2626)',
     color: '#fff',
     fontWeight: 'bold',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    marginTop: 10,
+    fontSize: 12
   }
 }
 

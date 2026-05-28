@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 
 const API = 'https://iptv-backend-cuxf.onrender.com'
+
+const PLACEHOLDER =
+  'https://upload.wikimedia.org/wikipedia/commons/6/65/No-Image-Placeholder.svg'
 
 function AdminChannels() {
   const [channels, setChannels] = useState([])
@@ -22,82 +25,50 @@ function AdminChannels() {
     'Outros'
   ]
 
-  const authHeaders = {
+  const authHeaders = useMemo(() => ({
     headers: {
       Authorization: `Bearer ${localStorage.getItem('token')}`
     }
+  }), [])
+
+  function normalize(text = '') {
+    return text
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
   }
 
   function detectCategory(name = '') {
-    const n = name.toLowerCase()
+    const n = normalize(name)
 
-    if (
-      n.includes('sport') ||
-      n.includes('espn') ||
-      n.includes('premiere') ||
-      n.includes('combate') ||
-      n.includes('ufc') ||
-      n.includes('futebol')
-    ) return 'Esportes'
-
-    if (
-      n.includes('cine') ||
-      n.includes('movie') ||
-      n.includes('film') ||
-      n.includes('telecine') ||
-      n.includes('hbo')
-    ) return 'Filmes'
-
-    if (
-      n.includes('news') ||
-      n.includes('cnn') ||
-      n.includes('globo news') ||
-      n.includes('jornal') ||
-      n.includes('reuters')
-    ) return 'Notícias'
-
-    if (
-      n.includes('kids') ||
-      n.includes('cartoon') ||
-      n.includes('disney') ||
-      n.includes('nick') ||
-      n.includes('infantil')
-    ) return 'Infantil'
-
-    if (
-      n.includes('discovery') ||
-      n.includes('history') ||
-      n.includes('natgeo') ||
-      n.includes('animal planet')
-    ) return 'Documentários'
-
-    if (
-      n.includes('music') ||
-      n.includes('mtv') ||
-      n.includes('radio')
-    ) return 'Música'
-
-    if (
-      n.includes('xxx') ||
-      n.includes('adult') ||
-      n.includes('18+')
-    ) return 'Adulto'
+    if (n.includes('sport') || n.includes('espn') || n.includes('premiere') || n.includes('combate') || n.includes('ufc') || n.includes('futebol')) return 'Esportes'
+    if (n.includes('cine') || n.includes('movie') || n.includes('film') || n.includes('telecine') || n.includes('hbo')) return 'Filmes'
+    if (n.includes('news') || n.includes('cnn') || n.includes('globo news') || n.includes('jornal')) return 'Notícias'
+    if (n.includes('kids') || n.includes('cartoon') || n.includes('disney') || n.includes('nick')) return 'Infantil'
+    if (n.includes('discovery') || n.includes('history') || n.includes('natgeo')) return 'Documentários'
+    if (n.includes('music') || n.includes('mtv') || n.includes('radio')) return 'Música'
+    if (n.includes('xxx') || n.includes('adult') || n.includes('18+')) return 'Adulto'
 
     return 'Outros'
   }
 
   async function loadChannels() {
     try {
+      setLoading(true)
+
       const res = await axios.get(`${API}/channels`, authHeaders)
-      setChannels(res.data)
+      setChannels(res.data || [])
     } catch (err) {
       console.log(err)
+      alert('Erro ao carregar canais')
+    } finally {
+      setLoading(false)
     }
   }
 
   async function importM3U() {
-    if (!m3uUrl) {
-      alert('Cole a URL M3U primeiro')
+    if (!m3uUrl.trim()) {
+      alert('Cole a URL M3U')
       return
     }
 
@@ -114,23 +85,20 @@ function AdminChannels() {
       setM3uUrl('')
       await loadChannels()
     } catch (err) {
-      alert(err.response?.data?.error || 'Erro ao importar M3U')
+      alert(err.response?.data?.error || 'Erro ao importar')
     } finally {
       setLoading(false)
     }
   }
 
   async function removeChannel(id) {
-    if (!confirm('Remover canal?')) return
+    if (!confirm('Deseja remover este canal?')) return
 
     try {
-      setLoading(true)
       await axios.delete(`${API}/channels/${id}`, authHeaders)
-      await loadChannels()
-    } catch (err) {
-      alert(err.response?.data?.error || 'Erro ao remover canal')
-    } finally {
-      setLoading(false)
+      setChannels(prev => prev.filter(c => c.id !== id))
+    } catch {
+      alert('Erro ao remover canal')
     }
   }
 
@@ -140,13 +108,15 @@ function AdminChannels() {
     try {
       setLoading(true)
 
-      const offlineChannels = channels.filter(c => !c.is_online)
+      const offline = channels.filter(c => !c.is_online)
 
-      for (const channel of offlineChannels) {
-        await axios.delete(`${API}/channels/${channel.id}`, authHeaders)
-      }
+      await Promise.all(
+        offline.map(channel =>
+          axios.delete(`${API}/channels/${channel.id}`, authHeaders)
+        )
+      )
 
-      alert(`Offline removidos: ${offlineChannels.length}`)
+      alert(`Offline removidos: ${offline.length}`)
       await loadChannels()
     } catch {
       alert('Erro ao remover offline')
@@ -156,62 +126,55 @@ function AdminChannels() {
   }
 
   async function removeForeignChannels() {
-    if (!confirm('Remover canais estrangeiros/indesejados?')) return
+    if (!confirm('Remover canais estrangeiros?')) return
 
     try {
       setLoading(true)
 
       const blockedWords = [
-        'arab', 'quran', 'islam', 'urdu', 'hindi', 'bangla',
-        'turk', 'russia', 'russian', 'kurd', 'pakistan',
-        'india', 'indonesia', 'africa', 'persian', 'punjabi',
-        'tamil', 'telugu', 'marathi', 'bengali', 'egypt',
-        'kuwait', 'saudi', 'muslim', 'koran', 'mosque',
-        'tv5monde', 'france 24', 'sharia', 'alquran',
-        'islamic', 'aljazeera', 'makkah', 'madinah',
-        'geo-blocked', 'not 24/7', 'россия', 'первый',
-        'рен', 'пятница', 'нтв', 'тнт', 'стс', 'мир',
-        'звезда', 'belarus', 'ukraine', 'kazakh',
-        'kazakhstan', 'armenia', 'georgia', 'azerbaijan',
-        'uzbek', '1+1', 'ictv', 'inter', 'novy', 'zee',
-        'zing', 'zoom', '7tv', 'tvk', 'tbn', 'tbk',
-        'otv', 'ctc', 'sts', 'ntv', 'ren tv', 'rtvi'
+        'arab',
+        'urdu',
+        'hindi',
+        'pakistan',
+        'india',
+        'russia',
+        'russian',
+        'turk',
+        'islam',
+        'mosque',
+        'quran',
+        'tv5monde',
+        'france 24',
+        'aljazeera'
       ]
 
       const toRemove = channels.filter(channel => {
-        const name = (channel.name || '')
-          .toLowerCase()
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
+        const name = normalize(channel.name || '')
+        const category = normalize(channel.category || '')
 
-        const category = (channel.category || '')
-          .toLowerCase()
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-
-        const hasAsianChars =
-          /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u0400-\u04FF]/.test(name)
+        const hasForeignChars =
+          /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\u0400-\u04FF]/.test(name)
 
         const noLogo =
           !channel.logo ||
-          channel.logo.includes('no-image') ||
           channel.logo.includes('placeholder')
 
         return (
-          hasAsianChars ||
+          hasForeignChars ||
           noLogo ||
           blockedWords.some(word =>
-            name.includes(word) ||
-            category.includes(word)
+            name.includes(word) || category.includes(word)
           )
         )
       })
 
-      for (const channel of toRemove) {
-        await axios.delete(`${API}/channels/${channel.id}`, authHeaders)
-      }
+      await Promise.all(
+        toRemove.map(channel =>
+          axios.delete(`${API}/channels/${channel.id}`, authHeaders)
+        )
+      )
 
-      alert(`Canais removidos: ${toRemove.length}`)
+      alert(`Removidos: ${toRemove.length}`)
       await loadChannels()
     } catch {
       alert('Erro ao remover estrangeiros')
@@ -224,35 +187,35 @@ function AdminChannels() {
     loadChannels()
   }, [])
 
-  const filtered = channels
-    .filter(channel => {
-      const matchSearch =
-        channel.name
-          ?.toLowerCase()
-          .includes(search.toLowerCase())
+  const filteredChannels = useMemo(() => {
+    return channels
+      .filter(channel => {
+        const channelName = normalize(channel.name || '')
+        const matchSearch = channelName.includes(normalize(search))
+        const category = detectCategory(channel.name)
 
-      const category = detectCategory(channel.name)
+        const matchCategory =
+          categoryFilter === 'Todos'
+            ? true
+            : category === categoryFilter
 
-      const matchCategory =
-        categoryFilter === 'Todos'
-          ? true
-          : category === categoryFilter
-
-      return matchSearch && matchCategory
-    })
-    .sort((a, b) =>
-      (a.name || '').localeCompare(
-        b.name || '',
-        'pt-BR',
-        { sensitivity: 'base' }
+        return matchSearch && matchCategory
+      })
+      .sort((a, b) =>
+        (a.name || '').localeCompare(b.name || '', 'pt-BR', {
+          sensitivity: 'base'
+        })
       )
-    )
+  }, [channels, search, categoryFilter])
 
-  const onlineCount = channels.filter(channel => channel.is_online).length
+  const onlineCount = useMemo(() => {
+    return channels.filter(c => c.is_online).length
+  }, [channels])
+
   const offlineCount = channels.length - onlineCount
 
   return (
-    <div style={styles.box}>
+    <div style={styles.container}>
       <div style={styles.top}>
         <div>
           <h1 style={styles.title}>Canais IPTV</h1>
@@ -263,23 +226,23 @@ function AdminChannels() {
         </div>
 
         <input
-          type="text"
-          placeholder="Buscar..."
+          type='text'
+          placeholder='Buscar...'
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={styles.input}
+          onChange={e => setSearch(e.target.value)}
+          style={styles.searchInput}
         />
       </div>
 
-      <div style={styles.categoriesRow}>
+      <div style={styles.categories}>
         {categories.map(cat => (
           <button
             key={cat}
             onClick={() => setCategoryFilter(cat)}
             style={
               categoryFilter === cat
-                ? styles.activeCategoryButton
-                : styles.categoryButton
+                ? styles.activeCategory
+                : styles.category
             }
           >
             {cat}
@@ -287,36 +250,32 @@ function AdminChannels() {
         ))}
       </div>
 
-      <div style={styles.importBox}>
+      <div style={styles.actions}>
         <input
-          type="text"
-          placeholder="Cole aqui a URL M3U..."
+          type='text'
+          placeholder='Cole aqui a URL M3U...'
           value={m3uUrl}
-          onChange={(e) => setM3uUrl(e.target.value)}
+          onChange={e => setM3uUrl(e.target.value)}
           style={styles.m3uInput}
         />
 
-        <button style={styles.blueButton} onClick={importM3U} disabled={loading}>
+        <button style={styles.blueButton} onClick={importM3U}>
           Importar M3U
         </button>
 
-        <button style={styles.blueButton} onClick={loadChannels} disabled={loading}>
+        <button style={styles.blueButton} onClick={loadChannels}>
           Atualizar
         </button>
 
-        <button
-          style={styles.yellowButton}
-          onClick={() => alert(`Online: ${onlineCount}\nOffline: ${offlineCount}`)}
-          disabled={loading}
-        >
+        <button style={styles.yellowButton} onClick={() => alert(`Online: ${onlineCount}\nOffline: ${offlineCount}`)}>
           Verificar online
         </button>
 
-        <button style={styles.redButton} onClick={removeOffline} disabled={loading}>
+        <button style={styles.redButton} onClick={removeOffline}>
           Remover offline
         </button>
 
-        <button style={styles.orangeButton} onClick={removeForeignChannels} disabled={loading}>
+        <button style={styles.orangeButton} onClick={removeForeignChannels}>
           Remover estrangeiros
         </button>
       </div>
@@ -327,131 +286,139 @@ function AdminChannels() {
         </div>
       )}
 
-      <div style={styles.totalCategory}>
-        Exibindo: {filtered.length} | Categoria: {categoryFilter}
+      <div style={styles.info}>
+        Exibindo: {filteredChannels.length} | Categoria: {categoryFilter}
       </div>
 
       <div style={styles.grid}>
-        {filtered.map(channel => (
-          <div key={channel.id} style={styles.card}>
-            <div style={styles.categoryBadge}>
-              {detectCategory(channel.name)}
+        {filteredChannels.map(channel => {
+          const category = detectCategory(channel.name)
+
+          return (
+            <div key={channel.id} style={styles.card}>
+              <div style={styles.categoryBadge}>
+                {category}
+              </div>
+
+              <img
+                loading='lazy'
+                src={
+                  channel.logo?.startsWith('http')
+                    ? channel.logo
+                    : PLACEHOLDER
+                }
+                alt={channel.name}
+                style={styles.logo}
+                onError={e => {
+                  e.currentTarget.src = PLACEHOLDER
+                }}
+              />
+
+              <div style={styles.name}>
+                {channel.name}
+              </div>
+
+              <div style={styles.status}>
+                <span
+                  style={{
+                    color: channel.is_online ? '#22c55e' : '#ef4444'
+                  }}
+                >
+                  ●
+                </span>
+
+                <span>
+                  {channel.is_online ? 'ONLINE' : 'OFFLINE'}
+                </span>
+              </div>
+
+              <button
+                style={styles.deleteButton}
+                onClick={() => removeChannel(channel.id)}
+              >
+                Remover
+              </button>
             </div>
-
-            <img
-              src={
-                channel.logo && channel.logo.startsWith('http')
-                  ? channel.logo
-                  : 'https://upload.wikimedia.org/wikipedia/commons/6/65/No-Image-Placeholder.svg'
-              }
-              style={styles.logo}
-              onError={(e) => {
-                e.currentTarget.src =
-                  'https://upload.wikimedia.org/wikipedia/commons/6/65/No-Image-Placeholder.svg'
-              }}
-            />
-
-            <div style={styles.name}>
-              {channel.name}
-            </div>
-
-            <div style={styles.status}>
-              <span style={{ color: channel.is_online ? '#22c55e' : '#ef4444' }}>
-                ●
-              </span>
-
-              <span>
-                {channel.is_online ? 'ONLINE' : 'OFFLINE'}
-              </span>
-            </div>
-
-            <button
-              style={styles.deleteButton}
-              onClick={() => removeChannel(channel.id)}
-            >
-              Remover
-            </button>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
 }
 
 const styles = {
-  box: {
+  container: {
     background: '#07142b',
-    padding: 16,
-    borderRadius: 20
+    padding: 20,
+    borderRadius: 24
   },
 
   top: {
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 18,
-    gap: 12,
-    flexWrap: 'wrap'
+    gap: 20,
+    flexWrap: 'wrap',
+    marginBottom: 20
   },
 
   title: {
-    margin: 0,
-    fontSize: 30
+    fontSize: 34,
+    margin: 0
   },
 
   counter: {
-    marginTop: 6,
-    color: '#94a3b8'
+    color: '#94a3b8',
+    marginTop: 6
   },
 
-  input: {
-    padding: 12,
-    borderRadius: 12,
+  searchInput: {
+    padding: 14,
+    borderRadius: 14,
     border: 'none',
     background: '#020617',
     color: '#fff',
-    minWidth: 220
+    minWidth: 280
   },
 
-  categoriesRow: {
+  categories: {
     display: 'flex',
     gap: 10,
-    marginBottom: 18,
-    flexWrap: 'wrap'
+    flexWrap: 'wrap',
+    marginBottom: 20
   },
 
-  categoryButton: {
+  category: {
     background: '#111827',
     color: '#fff',
     border: 'none',
     padding: '10px 18px',
-    borderRadius: 12,
+    borderRadius: 999,
     cursor: 'pointer',
     fontWeight: 'bold'
   },
 
-  activeCategoryButton: {
-    background: '#38bdf8',
+  activeCategory: {
+    background: 'linear-gradient(90deg,#38bdf8,#0ea5e9)',
     color: '#000',
     border: 'none',
     padding: '10px 18px',
-    borderRadius: 12,
+    borderRadius: 999,
     cursor: 'pointer',
     fontWeight: 'bold'
   },
 
-  importBox: {
+  actions: {
     display: 'flex',
     gap: 12,
-    marginBottom: 18,
-    flexWrap: 'wrap'
+    flexWrap: 'wrap',
+    marginBottom: 20
   },
 
   m3uInput: {
     flex: 1,
     minWidth: 300,
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     border: 'none',
     background: '#020617',
     color: '#fff'
@@ -460,8 +427,8 @@ const styles = {
   blueButton: {
     padding: '14px 18px',
     border: 'none',
-    borderRadius: 12,
-    background: '#38bdf8',
+    borderRadius: 14,
+    background: 'linear-gradient(90deg,#38bdf8,#0ea5e9)',
     color: '#000',
     fontWeight: 'bold',
     cursor: 'pointer'
@@ -470,7 +437,7 @@ const styles = {
   yellowButton: {
     padding: '14px 18px',
     border: 'none',
-    borderRadius: 12,
+    borderRadius: 14,
     background: '#facc15',
     color: '#000',
     fontWeight: 'bold',
@@ -480,8 +447,8 @@ const styles = {
   redButton: {
     padding: '14px 18px',
     border: 'none',
-    borderRadius: 12,
-    background: '#ef4444',
+    borderRadius: 14,
+    background: 'linear-gradient(90deg,#ef4444,#dc2626)',
     color: '#fff',
     fontWeight: 'bold',
     cursor: 'pointer'
@@ -490,8 +457,8 @@ const styles = {
   orangeButton: {
     padding: '14px 18px',
     border: 'none',
-    borderRadius: 12,
-    background: '#f97316',
+    borderRadius: 14,
+    background: 'linear-gradient(90deg,#f97316,#ea580c)',
     color: '#fff',
     fontWeight: 'bold',
     cursor: 'pointer'
@@ -499,79 +466,85 @@ const styles = {
 
   loading: {
     background: '#020617',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 16,
+    padding: 14,
+    borderRadius: 14,
+    marginBottom: 20,
     color: '#38bdf8',
     fontWeight: 'bold'
   },
 
-  totalCategory: {
+  info: {
     background: '#020617',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 16,
+    padding: 14,
+    borderRadius: 14,
+    marginBottom: 20,
     color: '#38bdf8',
     fontWeight: 'bold'
   },
 
   grid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-    gap: 16
+    gridTemplateColumns: 'repeat(auto-fill,minmax(118px,1fr))',
+    gap: 12
   },
 
   card: {
     background: '#020617',
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 14,
+    padding: 10,
     textAlign: 'center',
-    position: 'relative'
+    position: 'relative',
+    border: '1px solid rgba(255,255,255,0.06)',
+    minHeight: 170,
+    overflow: 'hidden'
   },
 
   categoryBadge: {
     position: 'absolute',
-    top: 10,
-    left: 10,
+    top: 7,
+    left: 7,
     background: '#38bdf8',
     color: '#000',
-    padding: '4px 8px',
+    padding: '3px 7px',
     borderRadius: 999,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 'bold'
   },
 
   logo: {
-    width: 80,
-    height: 80,
+    width: 58,
+    height: 50,
     objectFit: 'contain',
-    marginBottom: 10,
-    marginTop: 18
+    marginTop: 22,
+    marginBottom: 10
   },
 
   name: {
-    minHeight: 48,
-    fontSize: 14,
-    fontWeight: 'bold'
+    minHeight: 34,
+    fontWeight: 'bold',
+    fontSize: 11,
+    lineHeight: '13px',
+    overflow: 'hidden'
   },
 
   status: {
     display: 'flex',
     justifyContent: 'center',
-    gap: 6,
-    marginTop: 10,
-    marginBottom: 12,
-    fontSize: 12
+    gap: 5,
+    marginTop: 8,
+    marginBottom: 8,
+    fontSize: 10
   },
 
   deleteButton: {
     width: '100%',
-    padding: 10,
+    padding: 7,
     border: 'none',
-    borderRadius: 10,
-    background: '#ef4444',
+    borderRadius: 9,
+    background: 'linear-gradient(90deg,#ef4444,#dc2626)',
     color: '#fff',
     fontWeight: 'bold',
+    fontSize: 11,
     cursor: 'pointer'
   }
 }
