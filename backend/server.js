@@ -93,6 +93,18 @@ async function initDb() {
   `)
 
   await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS watching TEXT DEFAULT ''
+  `)
+
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS watching_type TEXT DEFAULT ''
+  `)
+
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS watching_updated_at TIMESTAMP
+  `)
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS channels (
       id SERIAL PRIMARY KEY,
       name TEXT,
@@ -653,7 +665,10 @@ app.get('/admin/users', auth, adminOnly, async (req, res) => {
           plan,
           max_connections,
           expires_at,
-          credits
+          credits,
+          watching,
+          watching_type,
+          watching_updated_at
         FROM users
         ORDER BY id DESC
       `)
@@ -1607,6 +1622,40 @@ app.get('/series', auth, async (req, res) => {
   }
 })
 
+app.post('/watching', auth, async (req, res) => {
+  try {
+    const {
+      title,
+      type
+    } = req.body
+
+    await pool.query(
+      `
+      UPDATE users
+      SET
+        watching = $1,
+        watching_type = $2,
+        watching_updated_at = NOW()
+      WHERE id = $3
+      `,
+      [
+        title || '',
+        type || '',
+        req.user.id
+      ]
+    )
+
+    res.json({
+      success: true
+    })
+  } catch (err) {
+    console.log('ERRO WATCHING:', err)
+
+    res.status(500).json({
+      error: 'erro ao atualizar assistindo'
+    })
+  }
+})
 app.get('/', (req, res) => {
   res.send('IPTV SERVER ONLINE')
 })
