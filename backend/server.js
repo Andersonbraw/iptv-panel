@@ -1236,19 +1236,30 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
             ? groupMatch[1].toLowerCase()
             : ''
 
-        const isSeries =
-          type === 'Series' ||
-          /s\d{1,2}e\d{1,2}/i.test(title) ||
-          group.includes('series') ||
-          group.includes('séries')
+        const normalizedGroup =
+  group.toLowerCase()
 
-        const isMovie =
-          type === 'Filmes' ||
-          group.includes('movie') ||
-          group.includes('movies') ||
-          group.includes('filme') ||
-          group.includes('filmes') ||
-          group.includes('vod')
+const isSeries =
+  type === 'Series' ||
+  /s\d{1,2}e\d{1,2}/i.test(title) ||
+  normalizedGroup.includes('series') ||
+  normalizedGroup.includes('séries') ||
+  normalizedGroup.includes('tv show') ||
+  normalizedGroup.includes('shows') ||
+  normalizedGroup.includes('temporada') ||
+  normalizedGroup.includes('anime')
+
+const isMovie =
+  type === 'Filmes' ||
+  normalizedGroup.includes('movie') ||
+  normalizedGroup.includes('movies') ||
+  normalizedGroup.includes('filme') ||
+  normalizedGroup.includes('filmes') ||
+  normalizedGroup.includes('cinema') ||
+  normalizedGroup.includes('vod') ||
+  normalizedGroup.includes('4k') ||
+  normalizedGroup.includes('lançamento') ||
+  normalizedGroup.includes('lancamento')
 
         if (!isMovie && !isSeries) {
           current = null
