@@ -1,119 +1,36 @@
 const filteredMovies =
   useMemo(() => {
-    const grouped = {}
+    return movies.filter(
+      movie => {
+        const title =
+          normalize(
+            movie.title || ''
+          )
 
-    movies.forEach(movie => {
-      let cleanTitle =
-        movie.title || ''
+        const category =
+          normalize(
+            movie.category ||
+              ''
+          )
 
-      cleanTitle = cleanTitle
-        .replace(
-          /S\d{1,2}E\d{1,2}/gi,
-          ''
-        )
-        .replace(
-          /S\d{1,2}\sE\d{1,2}/gi,
-          ''
-        )
-        .replace(
-          /TEMPORADA\s?\d+/gi,
-          ''
-        )
-        .replace(
-          /EPISODIO\s?\d+/gi,
-          ''
-        )
-        .replace(
-          /EP\s?\d+/gi,
-          ''
-        )
-        .replace(
-          /\(\d{4}\)/g,
-          ''
-        )
-        .replace(
-          /\[\d{4}\]/g,
-          ''
-        )
-        .replace(
-          /\s+/g,
-          ' '
-        )
-        .trim()
+        const matchesSearch =
+          title.includes(
+            normalize(search)
+          )
 
-      const normalizedTitle =
-        normalize(cleanTitle)
-
-      const category =
-        normalize(
-          movie.category ||
-            ''
-        )
-
-      const matchesSearch =
-        normalizedTitle.includes(
-          normalize(search)
-        )
-
-      const matchesFilter =
-        filter === 'Todos'
-          ? true
-          : category.includes(
-              normalize(
-                filter
+        const matchesFilter =
+          filter === 'Todos'
+            ? true
+            : category.includes(
+                normalize(
+                  filter
+                )
               )
-            )
 
-      if (
-        !matchesSearch ||
-        !matchesFilter
-      ) {
-        return
+        return (
+          matchesSearch &&
+          matchesFilter
+        )
       }
-
-      if (
-        !grouped[
-          normalizedTitle
-        ]
-      ) {
-        grouped[
-          normalizedTitle
-        ] = {
-          ...movie,
-          title: cleanTitle,
-          episodes: 1
-        }
-      } else {
-        grouped[
-          normalizedTitle
-        ].episodes++
-      }
-    })
-
-    return Object.values(grouped)
+    )
   }, [movies, search, filter])
-
-...
-
-<p
-  style={
-    styles.movieInfo
-  }
->
-  {movie.year ||
-    'VOD'}{' '}
-  •{' '}
-  {movie.category ||
-    'Filmes'}
-
-  {movie.episodes >
-    1 && (
-    <>
-      {' '}
-      •{' '}
-      {
-        movie.episodes
-      } episódios
-    </>
-  )}
-</p>
