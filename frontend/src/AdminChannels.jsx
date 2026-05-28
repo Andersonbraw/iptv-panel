@@ -205,6 +205,169 @@ function AdminChannels() {
     }
   }
 
+  async function removeOfflineChannels() {
+    const offline =
+      channels.filter(
+        c => !c.is_online
+      )
+
+    if (
+      offline.length === 0
+    ) {
+      alert(
+        'Nenhum canal offline'
+      )
+      return
+    }
+
+    if (
+      !confirm(
+        `Remover ${offline.length} canais offline?`
+      )
+    )
+      return
+
+    try {
+      setLoading(true)
+
+      await Promise.all(
+        offline.map(c =>
+          axios.delete(
+            `${API}/channels/${c.id}`,
+            authHeaders
+          )
+        )
+      )
+
+      alert(
+        `${offline.length} canais removidos`
+      )
+
+      await loadChannels()
+    } catch {
+      alert(
+        'Erro ao remover offline'
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function removeForeignChannels() {
+    const blocked = [
+      'arab',
+      'urdu',
+      'india',
+      'pakistan',
+      'turk',
+      'persian',
+      'bangla',
+      'africa',
+      'islam',
+      'quran',
+      'muslim',
+      'hindi',
+      'tamil',
+      'telugu',
+      'aljazeera',
+      'france',
+      'russia',
+      'russian'
+    ]
+
+    const foreign =
+      channels.filter(
+        channel => {
+          const name =
+            normalize(
+              channel.name
+            )
+
+          return blocked.some(
+            word =>
+              name.includes(
+                word
+              )
+          )
+        }
+      )
+
+    if (
+      foreign.length === 0
+    ) {
+      alert(
+        'Nenhum canal estrangeiro encontrado'
+      )
+      return
+    }
+
+    if (
+      !confirm(
+        `Remover ${foreign.length} canais estrangeiros?`
+      )
+    )
+      return
+
+    try {
+      setLoading(true)
+
+      await Promise.all(
+        foreign.map(c =>
+          axios.delete(
+            `${API}/channels/${c.id}`,
+            authHeaders
+          )
+        )
+      )
+
+      alert(
+        `${foreign.length} canais removidos`
+      )
+
+      await loadChannels()
+    } catch {
+      alert(
+        'Erro ao remover estrangeiros'
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function removeAllChannels() {
+    if (
+      !confirm(
+        'APAGAR TODOS OS CANAIS?'
+      )
+    )
+      return
+
+    try {
+      setLoading(true)
+
+      await Promise.all(
+        channels.map(c =>
+          axios.delete(
+            `${API}/channels/${c.id}`,
+            authHeaders
+          )
+        )
+      )
+
+      setChannels([])
+
+      alert(
+        'Todos canais removidos'
+      )
+    } catch {
+      alert(
+        'Erro ao limpar canais'
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
     loadChannels()
   }, [])
@@ -348,6 +511,39 @@ function AdminChannels() {
           }
         >
           Atualizar
+        </button>
+
+        <button
+          style={
+            styles.yellowButton
+          }
+          onClick={
+            removeOfflineChannels
+          }
+        >
+          Remover offline
+        </button>
+
+        <button
+          style={
+            styles.orangeButton
+          }
+          onClick={
+            removeForeignChannels
+          }
+        >
+          Remover estrangeiros
+        </button>
+
+        <button
+          style={
+            styles.redButton
+          }
+          onClick={
+            removeAllChannels
+          }
+        >
+          Limpar tudo
         </button>
       </div>
 
@@ -580,6 +776,42 @@ const styles = {
     background:
       'linear-gradient(90deg,#38bdf8,#0ea5e9)',
     color: '#000',
+    fontWeight: 'bold',
+    cursor: 'pointer'
+  },
+
+  yellowButton: {
+    padding:
+      '14px 18px',
+    border: 'none',
+    borderRadius: 14,
+    background:
+      'linear-gradient(90deg,#facc15,#eab308)',
+    color: '#000',
+    fontWeight: 'bold',
+    cursor: 'pointer'
+  },
+
+  orangeButton: {
+    padding:
+      '14px 18px',
+    border: 'none',
+    borderRadius: 14,
+    background:
+      'linear-gradient(90deg,#fb923c,#ea580c)',
+    color: '#fff',
+    fontWeight: 'bold',
+    cursor: 'pointer'
+  },
+
+  redButton: {
+    padding:
+      '14px 18px',
+    border: 'none',
+    borderRadius: 14,
+    background:
+      'linear-gradient(90deg,#ef4444,#dc2626)',
+    color: '#fff',
     fontWeight: 'bold',
     cursor: 'pointer'
   },
