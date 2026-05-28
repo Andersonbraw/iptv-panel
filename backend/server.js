@@ -153,13 +153,22 @@ function adminOnly(req, res, next) {
   next()
 }
 
-function generateRandomLogin() {
-  const number = Math.floor(100000 + Math.random() * 900000)
-  const password = Math.random().toString(36).slice(2, 10)
+function generateRandomLogin(customName = '') {
+  const number = Math.floor(
+    100000 + Math.random() * 900000
+  )
+
+  const password = Math.random()
+    .toString(36)
+    .slice(2, 10)
 
   return {
-    name: `Cliente ${number}`,
+    name:
+      customName?.trim() ||
+      `Cliente ${number}`,
+
     email: `cliente${number}@iptv.local`,
+
     password
   }
 }
@@ -706,7 +715,9 @@ app.post('/admin/users/create-random', auth, adminOnly, async (req, res) => {
       })
     }
 
-    const login = generateRandomLogin()
+    const login = generateRandomLogin(
+      req.body.name
+    )
 
     const result = await pool.query(
       `
