@@ -335,38 +335,6 @@ function AdminChannels() {
   }
 
   async function removeAllChannels() {
-  if (
-    !confirm(
-      'APAGAR TODOS OS CANAIS?'
-    )
-  )
-    return
-
-  try {
-    setLoading(true)
-
-    await axios.delete(
-      `${API}/channels-clear`,
-      authHeaders
-    )
-
-    setChannels([])
-
-    alert(
-      'Todos canais removidos'
-    )
-  } catch (err) {
-    console.log(err)
-
-    alert(
-      err.response?.data
-        ?.error ||
-        'Erro ao limpar canais'
-    )
-  } finally {
-    setLoading(false)
-  }
-}
     if (
       !confirm(
         'APAGAR TODOS OS CANAIS?'
@@ -377,13 +345,9 @@ function AdminChannels() {
     try {
       setLoading(true)
 
-      await Promise.all(
-        channels.map(c =>
-          axios.delete(
-            `${API}/channels/${c.id}`,
-            authHeaders
-          )
-        )
+      await axios.delete(
+        `${API}/channels-clear`,
+        authHeaders
       )
 
       setChannels([])
@@ -391,9 +355,13 @@ function AdminChannels() {
       alert(
         'Todos canais removidos'
       )
-    } catch {
+    } catch (err) {
+      console.log(err)
+
       alert(
-        'Erro ao limpar canais'
+        err.response?.data
+          ?.error ||
+          'Erro ao limpar canais'
       )
     } finally {
       setLoading(false)
@@ -608,32 +576,6 @@ function AdminChannels() {
                 style={
                   styles.card
                 }
-                onMouseEnter={e => {
-                  e.currentTarget.style.transform =
-                    'scale(1.08)'
-
-                  e.currentTarget.style.zIndex =
-                    20
-
-                  e.currentTarget.style.boxShadow =
-                    '0 0 25px rgba(56,189,248,0.45)'
-
-                  e.currentTarget.style.border =
-                    '1px solid #38bdf8'
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.transform =
-                    'scale(1)'
-
-                  e.currentTarget.style.zIndex =
-                    1
-
-                  e.currentTarget.style.boxShadow =
-                    'none'
-
-                  e.currentTarget.style.border =
-                    '1px solid rgba(255,255,255,0.06)'
-                }}
               >
                 <div
                   style={
@@ -909,9 +851,7 @@ const styles = {
     height: 50,
     objectFit: 'contain',
     marginTop: 22,
-    marginBottom: 10,
-    transition:
-      '0.25s'
+    marginBottom: 10
   },
 
   name: {
