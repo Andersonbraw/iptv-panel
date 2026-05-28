@@ -671,9 +671,20 @@ function ClientPanel({
                           'none'
                       }
                     }}
-                    onClick={() =>
-                      selectChannel(channel)
-                    }
+                    onClick={() => {
+  setSelectedChannel(channel)
+
+  axios.post(
+    `${API}/watching`,
+    {
+      title: channel.name,
+      type: 'Canal'
+    },
+    authHeaders
+  ).catch(err =>
+    console.log('erro watching', err)
+  )
+}}
                   >
                     <img
                       loading='lazy'
