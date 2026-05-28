@@ -8,11 +8,82 @@ function AdminChannels() {
   const [search, setSearch] = useState('')
   const [m3uUrl, setM3uUrl] = useState('')
   const [loading, setLoading] = useState(false)
+  const [categoryFilter, setCategoryFilter] = useState('Todos')
+
+  const categories = [
+    'Todos',
+    'Esportes',
+    'Filmes',
+    'Notícias',
+    'Infantil',
+    'Documentários',
+    'Música',
+    'Adulto',
+    'Outros'
+  ]
 
   const authHeaders = {
     headers: {
       Authorization: `Bearer ${localStorage.getItem('token')}`
     }
+  }
+
+  function detectCategory(name = '') {
+    const n = name.toLowerCase()
+
+    if (
+      n.includes('sport') ||
+      n.includes('espn') ||
+      n.includes('premiere') ||
+      n.includes('combate') ||
+      n.includes('ufc') ||
+      n.includes('futebol')
+    ) return 'Esportes'
+
+    if (
+      n.includes('cine') ||
+      n.includes('movie') ||
+      n.includes('film') ||
+      n.includes('telecine') ||
+      n.includes('hbo')
+    ) return 'Filmes'
+
+    if (
+      n.includes('news') ||
+      n.includes('cnn') ||
+      n.includes('globo news') ||
+      n.includes('jornal') ||
+      n.includes('reuters')
+    ) return 'Notícias'
+
+    if (
+      n.includes('kids') ||
+      n.includes('cartoon') ||
+      n.includes('disney') ||
+      n.includes('nick') ||
+      n.includes('infantil')
+    ) return 'Infantil'
+
+    if (
+      n.includes('discovery') ||
+      n.includes('history') ||
+      n.includes('natgeo') ||
+      n.includes('animal planet')
+    ) return 'Documentários'
+
+    if (
+      n.includes('music') ||
+      n.includes('mtv') ||
+      n.includes('radio')
+    ) return 'Música'
+
+    if (
+      n.includes('xxx') ||
+      n.includes('adult') ||
+      n.includes('18+')
+    ) return 'Adulto'
+
+    return 'Outros'
   }
 
   async function loadChannels() {
@@ -77,7 +148,7 @@ function AdminChannels() {
 
       alert(`Offline removidos: ${offlineChannels.length}`)
       await loadChannels()
-    } catch (err) {
+    } catch {
       alert('Erro ao remover offline')
     } finally {
       setLoading(false)
@@ -91,77 +162,21 @@ function AdminChannels() {
       setLoading(true)
 
       const blockedWords = [
-  'arab',
-  'quran',
-  'islam',
-  'urdu',
-  'hindi',
-  'bangla',
-  'turk',
-  'russia',
-  'russian',
-  'kurd',
-  'pakistan',
-  'india',
-  'indonesia',
-  'africa',
-  'persian',
-  'punjabi',
-  'tamil',
-  'telugu',
-  'marathi',
-  'bengali',
-  'egypt',
-  'kuwait',
-  'saudi',
-  'muslim',
-  'koran',
-  'mosque',
-  'tv5monde',
-  'france 24',
-  'sharia',
-  'alquran',
-  'islamic',
-  'aljazeera',
-  'makkah',
-  'madinah',
-  'geo-blocked',
-  'not 24/7',
-  'россия',
-  'первый',
-  'рен',
-  'пятница',
-  'нтв',
-  'тнт',
-  'стс',
-  'мир',
-  'звезда',
-  'belarus',
-  'ukraine',
-  'kazakh',
-  'kazakhstan',
-  'armenia',
-  'georgia',
-  'azerbaijan',
-  'uzbek',
-  '1+1',
-  'ictv',
-  'inter',
-  'novy',
-  'zee',
-  'zing',
-  'zoom',
-  '7tv',
-  'tvk',
-  'tbn',
-  'tbk',
-  'otv',
-  'ctc',
-  'sts',
-  'ntv',
-  'ren tv',
-  'rtvi'
-]
+        'arab', 'quran', 'islam', 'urdu', 'hindi', 'bangla',
+        'turk', 'russia', 'russian', 'kurd', 'pakistan',
+        'india', 'indonesia', 'africa', 'persian', 'punjabi',
+        'tamil', 'telugu', 'marathi', 'bengali', 'egypt',
+        'kuwait', 'saudi', 'muslim', 'koran', 'mosque',
+        'tv5monde', 'france 24', 'sharia', 'alquran',
+        'islamic', 'aljazeera', 'makkah', 'madinah',
+        'geo-blocked', 'not 24/7', 'россия', 'первый',
+        'рен', 'пятница', 'нтв', 'тнт', 'стс', 'мир',
+        'звезда', 'belarus', 'ukraine', 'kazakh',
+        'kazakhstan', 'armenia', 'georgia', 'azerbaijan',
+        'uzbek', '1+1', 'ictv', 'inter', 'novy', 'zee',
+        'zing', 'zoom', '7tv', 'tvk', 'tbn', 'tbk',
+        'otv', 'ctc', 'sts', 'ntv', 'ren tv', 'rtvi'
+      ]
 
       const toRemove = channels.filter(channel => {
         const name = (channel.name || '')
@@ -169,105 +184,27 @@ function AdminChannels() {
           .normalize('NFD')
           .replace(/[\u0300-\u036f]/g, '')
 
-      const category = (channel.category || '')
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
+        const category = (channel.category || '')
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
 
         const hasAsianChars =
-  /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u0400-\u04FF]/.test(name)
+          /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\u0400-\u04FF]/.test(name)
 
-const suspiciousNames = [
-  '7tv',
-  'ztv',
-  'zz',
-  'xite',
-  'zoom',
-  'zing',
-  'tvk',
-  'tbk',
-  'tbn',
-  'otv',
-  'ctc',
-  'sts',
-  'ntv',
-  'ren',
-  'rtvi',
-  '1+1',
-  'inter',
-  'novy',
-  'ytn',
-  'jtbc',
-  'mnet',
-  'kbs',
-  'sbs',
-  'cgtn',
-  'cctv',
-  'tvb',
-  'phoenix',
-  'you tv',
-  'xplore',
-  'xtv',
-  'utv',
-  'ytv'
-]
+        const noLogo =
+          !channel.logo ||
+          channel.logo.includes('no-image') ||
+          channel.logo.includes('placeholder')
 
-const hasSuspiciousName =
-  suspiciousNames.some(word =>
-    name.includes(word)
-  )
-
-const lowQualityPatterns = [
-  'world',
-  'channel',
-  'local',
-  'tv app',
-  'promo',
-  'shopping',
-  'faith',
-  'vision',
-  'weather',
-  'radio',
-  'music',
-  'worship',
-  'west',
-  'east',
-  'north',
-  'south',
-  'plus',
-  'extra',
-  'backup',
-  'test',
-  'demo',
-  'live tv',
-  'sd',
-  'uhd',
-  'fhd',
-  '4k',
-  'shop',
-  'mall'
-]
-
-const hasLowQualityName =
-  lowQualityPatterns.some(word =>
-    name.includes(word)
-  )
-
-const noLogo =
-  !channel.logo ||
-  channel.logo.includes('no-image') ||
-  channel.logo.includes('placeholder')
-
-return (
-  hasAsianChars ||
-  hasSuspiciousName ||
-  hasLowQualityName ||
-  noLogo ||
-  blockedWords.some(word =>
-    name.includes(word) ||
-    category.includes(word)
-  )
-)
+        return (
+          hasAsianChars ||
+          noLogo ||
+          blockedWords.some(word =>
+            name.includes(word) ||
+            category.includes(word)
+          )
+        )
       })
 
       for (const channel of toRemove) {
@@ -276,7 +213,7 @@ return (
 
       alert(`Canais removidos: ${toRemove.length}`)
       await loadChannels()
-    } catch (err) {
+    } catch {
       alert('Erro ao remover estrangeiros')
     } finally {
       setLoading(false)
@@ -288,20 +225,28 @@ return (
   }, [])
 
   const filtered = channels
-  .filter(channel =>
-    channel.name
-      ?.toLowerCase()
-      .includes(search.toLowerCase())
-  )
-  .sort((a, b) =>
-    (a.name || '').localeCompare(
-      b.name || '',
-      'pt-BR',
-      {
-        sensitivity: 'base'
-      }
+    .filter(channel => {
+      const matchSearch =
+        channel.name
+          ?.toLowerCase()
+          .includes(search.toLowerCase())
+
+      const category = detectCategory(channel.name)
+
+      const matchCategory =
+        categoryFilter === 'Todos'
+          ? true
+          : category === categoryFilter
+
+      return matchSearch && matchCategory
+    })
+    .sort((a, b) =>
+      (a.name || '').localeCompare(
+        b.name || '',
+        'pt-BR',
+        { sensitivity: 'base' }
+      )
     )
-  )
 
   const onlineCount = channels.filter(channel => channel.is_online).length
   const offlineCount = channels.length - onlineCount
@@ -324,6 +269,22 @@ return (
           onChange={(e) => setSearch(e.target.value)}
           style={styles.input}
         />
+      </div>
+
+      <div style={styles.categoriesRow}>
+        {categories.map(cat => (
+          <button
+            key={cat}
+            onClick={() => setCategoryFilter(cat)}
+            style={
+              categoryFilter === cat
+                ? styles.activeCategoryButton
+                : styles.categoryButton
+            }
+          >
+            {cat}
+          </button>
+        ))}
       </div>
 
       <div style={styles.importBox}>
@@ -366,9 +327,17 @@ return (
         </div>
       )}
 
+      <div style={styles.totalCategory}>
+        Exibindo: {filtered.length} | Categoria: {categoryFilter}
+      </div>
+
       <div style={styles.grid}>
         {filtered.map(channel => (
           <div key={channel.id} style={styles.card}>
+            <div style={styles.categoryBadge}>
+              {detectCategory(channel.name)}
+            </div>
+
             <img
               src={
                 channel.logo && channel.logo.startsWith('http')
@@ -444,6 +413,33 @@ const styles = {
     minWidth: 220
   },
 
+  categoriesRow: {
+    display: 'flex',
+    gap: 10,
+    marginBottom: 18,
+    flexWrap: 'wrap'
+  },
+
+  categoryButton: {
+    background: '#111827',
+    color: '#fff',
+    border: 'none',
+    padding: '10px 18px',
+    borderRadius: 12,
+    cursor: 'pointer',
+    fontWeight: 'bold'
+  },
+
+  activeCategoryButton: {
+    background: '#38bdf8',
+    color: '#000',
+    border: 'none',
+    padding: '10px 18px',
+    borderRadius: 12,
+    cursor: 'pointer',
+    fontWeight: 'bold'
+  },
+
   importBox: {
     display: 'flex',
     gap: 12,
@@ -510,6 +506,15 @@ const styles = {
     fontWeight: 'bold'
   },
 
+  totalCategory: {
+    background: '#020617',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+    color: '#38bdf8',
+    fontWeight: 'bold'
+  },
+
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
@@ -520,14 +525,28 @@ const styles = {
     background: '#020617',
     borderRadius: 16,
     padding: 14,
-    textAlign: 'center'
+    textAlign: 'center',
+    position: 'relative'
+  },
+
+  categoryBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    background: '#38bdf8',
+    color: '#000',
+    padding: '4px 8px',
+    borderRadius: 999,
+    fontSize: 10,
+    fontWeight: 'bold'
   },
 
   logo: {
     width: 80,
     height: 80,
     objectFit: 'contain',
-    marginBottom: 10
+    marginBottom: 10,
+    marginTop: 18
   },
 
   name: {
