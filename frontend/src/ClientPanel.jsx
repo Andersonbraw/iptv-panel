@@ -452,21 +452,43 @@ function ClientPanel({
               {filteredChannels.map(
                 channel => (
                   <div
-                    key={
-                      channel.id
-                    }
-                    style={
-                      selectedChannel?.id ===
-                      channel.id
-                        ? styles.activeCard
-                        : styles.card
-                    }
-                    onClick={() =>
-                      setSelectedChannel(
-                        channel
-                      )
-                    }
-                  >
+  key={channel.id}
+  style={
+    selectedChannel?.id ===
+    channel.id
+      ? styles.activeCard
+      : styles.card
+  }
+  onMouseEnter={e => {
+    if (
+      selectedChannel?.id !==
+      channel.id
+    ) {
+      e.currentTarget.style.transform =
+        'scale(1.08)'
+
+      e.currentTarget.style.boxShadow =
+        '0 0 18px rgba(56,189,248,0.35)'
+    }
+  }}
+  onMouseLeave={e => {
+    if (
+      selectedChannel?.id !==
+      channel.id
+    ) {
+      e.currentTarget.style.transform =
+        'scale(1)'
+
+      e.currentTarget.style.boxShadow =
+        'none'
+    }
+  }}
+  onClick={() =>
+    setSelectedChannel(
+      channel
+    )
+  }
+>
                     <img
                       loading='lazy'
                       src={
@@ -672,42 +694,54 @@ const styles = {
     height: 60,
     border: '5px solid #0f172a',
     borderTop: '5px solid #38bdf8',
-    borderRadius: '50%'
+    borderRadius: '50%',
+    animation: 'spin 1s linear infinite'
   },
 
   app: {
     display: 'flex',
     minHeight: '100vh',
-    background: '#000814',
+    background:
+      'linear-gradient(180deg,#000814,#020617)',
     color: '#fff',
     fontFamily: 'Arial'
   },
 
   sidebar: {
-    width: 280,
-    background: '#021033',
-    padding: 20,
-    borderRight: '1px solid #10234d',
+    width: 260,
+    background:
+      'linear-gradient(180deg,#021033,#000814)',
+    padding: 18,
+    borderRight:
+      '1px solid rgba(56,189,248,0.15)',
     display: 'flex',
-    flexDirection: 'column'
+    flexDirection: 'column',
+    position: 'sticky',
+    top: 0,
+    height: '100vh'
   },
 
   logo: {
     color: '#38bdf8',
-    fontSize: 34,
+    fontSize: 28,
     textAlign: 'center',
-    marginBottom: 30
+    marginBottom: 24,
+    fontWeight: 'bold'
   },
 
   userBox: {
-    background: '#0b1736',
-    padding: 20,
+    background:
+      'rgba(15,23,42,0.95)',
+    padding: 18,
     borderRadius: 20,
-    marginBottom: 20
+    marginBottom: 20,
+    border:
+      '1px solid rgba(56,189,248,0.12)'
   },
 
   userType: {
-    color: '#94a3b8'
+    color: '#94a3b8',
+    fontSize: 12
   },
 
   plan: {
@@ -717,26 +751,29 @@ const styles = {
   menuButton: {
     background: '#07142b',
     border: 'none',
-    padding: 14,
+    padding: 13,
     borderRadius: 14,
     color: '#fff',
     cursor: 'pointer',
     fontWeight: 'bold',
     textAlign: 'left',
-    marginBottom: 10
+    marginBottom: 10,
+    transition: '0.2s'
   },
 
   activeMenuButton: {
     background:
       'linear-gradient(90deg,#38bdf8,#0ea5e9)',
     border: 'none',
-    padding: 14,
+    padding: 13,
     borderRadius: 14,
     color: '#000',
     cursor: 'pointer',
     fontWeight: 'bold',
     textAlign: 'left',
-    marginBottom: 10
+    marginBottom: 10,
+    boxShadow:
+      '0 0 20px rgba(56,189,248,0.35)'
   },
 
   redButton: {
@@ -754,21 +791,22 @@ const styles = {
 
   main: {
     flex: 1,
-    padding: 24,
+    padding: 18,
     overflowX: 'hidden'
   },
 
   top: {
     display: 'flex',
-    justifyContent: 'space-between',
+    justifyContent:
+      'space-between',
     alignItems: 'center',
-    marginBottom: 18,
+    marginBottom: 16,
     gap: 20,
     flexWrap: 'wrap'
   },
 
   title: {
-    fontSize: 34,
+    fontSize: 30,
     margin: 0
   },
 
@@ -778,18 +816,25 @@ const styles = {
 
   input: {
     width: 280,
-    padding: 14,
+    padding: 13,
     borderRadius: 14,
     border: 'none',
     background: '#020617',
-    color: '#fff'
+    color: '#fff',
+    outline: 'none'
   },
 
   hero: {
-    background: '#07142b',
+    background:
+      'linear-gradient(180deg,#07142b,#020617)',
     borderRadius: 24,
-    padding: 16,
-    marginBottom: 18
+    padding: 12,
+    marginBottom: 16,
+    position: 'sticky',
+    top: 10,
+    zIndex: 100,
+    boxShadow:
+      '0 10px 40px rgba(0,0,0,0.4)'
   },
 
   playerWrap: {
@@ -800,25 +845,27 @@ const styles = {
 
   video: {
     width: '100%',
-    height: '65vh',
+    height: '64vh',
     objectFit: 'contain',
     background: '#000'
   },
 
   infoBox: {
-    marginTop: 14
+    marginTop: 12
   },
 
   liveBadge: {
-    background: '#ef4444',
+    background:
+      'linear-gradient(90deg,#ef4444,#dc2626)',
     padding: '6px 12px',
     borderRadius: 999,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 'bold'
   },
 
   channelTitle: {
-    fontSize: 28
+    fontSize: 26,
+    marginTop: 10
   },
 
   category: {
@@ -828,44 +875,56 @@ const styles = {
   grid: {
     display: 'grid',
     gridTemplateColumns:
-      'repeat(auto-fill,minmax(90px,1fr))',
-    gap: 10
+      'repeat(auto-fill,minmax(82px,1fr))',
+    gap: 8
   },
 
   card: {
     background:
-      'linear-gradient(180deg,#1e293b,#0f172a)',
+      'linear-gradient(180deg,#111827,#020617)',
     borderRadius: 12,
-    padding: 10,
+    padding: 8,
     textAlign: 'center',
     cursor: 'pointer',
-    transition: '0.2s'
+    transition:
+      '0.18s ease',
+    border:
+      '1px solid rgba(255,255,255,0.04)',
+    position: 'relative'
   },
 
   activeCard: {
     background:
       'linear-gradient(180deg,#0ea5e9,#0369a1)',
     borderRadius: 12,
-    padding: 10,
+    padding: 8,
     textAlign: 'center',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    transform: 'scale(1.05)',
+    boxShadow:
+      '0 0 25px rgba(56,189,248,0.45)',
+    border:
+      '1px solid #38bdf8'
   },
 
   channelLogo: {
-    width: 40,
-    height: 40,
-    objectFit: 'contain'
+    width: 38,
+    height: 38,
+    objectFit: 'contain',
+    transition: '0.2s'
   },
 
   channelName: {
-    fontSize: 10,
-    marginTop: 6,
-    lineHeight: '12px'
+    fontSize: 9,
+    marginTop: 5,
+    lineHeight: '11px',
+    minHeight: 22
   },
 
   moviesTop: {
     display: 'flex',
-    justifyContent: 'space-between',
+    justifyContent:
+      'space-between',
     alignItems: 'center',
     marginBottom: 24,
     gap: 20,
@@ -888,7 +947,8 @@ const styles = {
     cursor: 'pointer',
     transition: '0.25s',
     transform: 'scale(1)',
-    boxShadow: '0 0 0 rgba(0,0,0,0)'
+    boxShadow:
+      '0 0 0 rgba(0,0,0,0)'
   },
 
   movieImage: {
