@@ -19,6 +19,9 @@ function AdminUsers({
   const [search, setSearch] =
     useState('')
 
+  const [clientName, setClientName] =
+    useState('')
+
   const [loading, setLoading] =
     useState(false)
 
@@ -168,13 +171,22 @@ function AdminUsers({
       const res =
         await axios.post(
           `${API}/admin/users/create-random`,
-          {},
+          {
+            name: clientName
+          },
           { headers }
         )
 
       setCreatedLogin(
-        res.data.login
+        {
+          ...res.data.login,
+          name:
+            clientName ||
+            'Cliente'
+        }
       )
+
+      setClientName('')
 
       reloadUsers()
     } catch (err) {
@@ -220,7 +232,10 @@ function AdminUsers({
     if (!createdLogin) return
 
     navigator.clipboard.writeText(`
+Nome: ${createdLogin.name}
+
 Email: ${createdLogin.email}
+
 Senha: ${createdLogin.password}
     `)
 
@@ -292,6 +307,20 @@ Senha: ${createdLogin.password}
           />
 
           <input
+            type='text'
+            placeholder='Nome do cliente'
+            value={clientName}
+            onChange={e =>
+              setClientName(
+                e.target.value
+              )
+            }
+            style={
+              styles.nameInput
+            }
+          />
+
+          <input
             type='number'
             min='1'
             value={credits}
@@ -343,9 +372,7 @@ Senha: ${createdLogin.password}
 
           <input
             readOnly
-            value={
-              createdLogin.email
-            }
+            value={`Nome: ${createdLogin.name}`}
             style={
               styles.copyInput
             }
@@ -353,9 +380,15 @@ Senha: ${createdLogin.password}
 
           <input
             readOnly
-            value={
-              createdLogin.password
+            value={`Email: ${createdLogin.email}`}
+            style={
+              styles.copyInput
             }
+          />
+
+          <input
+            readOnly
+            value={`Senha: ${createdLogin.password}`}
             style={
               styles.copyInput
             }
@@ -713,7 +746,17 @@ const styles = {
       '1px solid #334155',
     background: '#020617',
     color: '#fff',
-    width: 240
+    width: 220
+  },
+
+  nameInput: {
+    padding: 12,
+    borderRadius: 12,
+    border:
+      '1px solid #334155',
+    background: '#020617',
+    color: '#fff',
+    width: 220
   },
 
   creditInput: {
