@@ -50,10 +50,7 @@ function HlsPlayer({ src, style }) {
       setError(true)
     }
 
-    if (
-      src.includes('.m3u8') &&
-      Hls.isSupported()
-    ) {
+    if (src.includes('.m3u8') && Hls.isSupported()) {
       hls = new Hls({
         enableWorker: true,
         lowLatencyMode: true,
@@ -63,35 +60,29 @@ function HlsPlayer({ src, style }) {
       hls.loadSource(src)
       hls.attachMedia(video)
 
-      hls.on(
-        Hls.Events.MANIFEST_PARSED,
-        () => {
-          ready()
-          video.play().catch(() => {})
-        }
-      )
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        ready()
+        video.play().catch(() => {})
+      })
 
-      hls.on(
-        Hls.Events.ERROR,
-        (event, data) => {
-          if (data.fatal) {
-            switch (data.type) {
-              case Hls.ErrorTypes.NETWORK_ERROR:
-                hls.startLoad()
-                break
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              hls.startLoad()
+              break
 
-              case Hls.ErrorTypes.MEDIA_ERROR:
-                hls.recoverMediaError()
-                break
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              hls.recoverMediaError()
+              break
 
-              default:
-                failed()
-                hls.destroy()
-                break
-            }
+            default:
+              failed()
+              hls.destroy()
+              break
           }
         }
-      )
+      })
     } else {
       video.src = src
 
@@ -171,9 +162,7 @@ function ClientPanel({
   const authHeaders = useMemo(() => {
     return {
       headers: {
-        Authorization: `Bearer ${localStorage.getItem(
-          'token'
-        )}`
+        Authorization: `Bearer ${localStorage.getItem('token')}`
       }
     }
   }, [])
@@ -220,9 +209,7 @@ function ClientPanel({
       title.match(/S(\d{1,2})E\d{1,3}/i) ||
       title.match(/TEMPORADA\s?(\d{1,2})/i)
 
-    return match
-      ? String(Number(match[1]))
-      : '1'
+    return match ? String(Number(match[1])) : '1'
   }
 
   function getEpisodeNumber(title = '') {
@@ -232,9 +219,43 @@ function ClientPanel({
       title.match(/EPISÓDIO\s?(\d{1,3})/i) ||
       title.match(/EP\s?(\d{1,3})/i)
 
-    return match
-      ? Number(match[1])
-      : 9999
+    return match ? Number(match[1]) : 9999
+  }
+
+  async function reportWatching(title, type) {
+    const watchingData = {
+      title: title || '',
+      type: type || ''
+    }
+
+    setCurrentWatching(watchingData)
+
+    try {
+      await axios.post(
+        `${API}/watching`,
+        watchingData,
+        authHeaders
+      )
+    } catch (err) {
+      console.log('ERRO WATCHING:', err)
+    }
+  }
+
+  async function clearWatching() {
+    setCurrentWatching(null)
+
+    try {
+      await axios.post(
+        `${API}/watching`,
+        {
+          title: '',
+          type: ''
+        },
+        authHeaders
+      )
+    } catch (err) {
+      console.log('ERRO CLEAR WATCHING:', err)
+    }
   }
 
   async function loadChannels() {
@@ -246,10 +267,7 @@ function ClientPanel({
 
       setChannels(res.data || [])
 
-      if (
-        res.data?.length > 0 &&
-        !selectedChannel
-      ) {
+      if (res.data?.length > 0 && !selectedChannel) {
         setSelectedChannel(res.data[0])
       }
     } catch (err) {
@@ -287,25 +305,6 @@ function ClientPanel({
     loadData()
   }, [])
 
-  async function reportWatching(title, type) {
-    const watchingData = {
-      title: title || '',
-      type: type || ''
-    }
-
-    setCurrentWatching(watchingData)
-
-    try {
-      await axios.post(
-        `${API}/watching`,
-        watchingData,
-        authHeaders
-      )
-    } catch (err) {
-      console.log('ERRO WATCHING:', err)
-    }
-  }
-
   useEffect(() => {
     if (!currentWatching?.title) return
 
@@ -317,24 +316,40 @@ function ClientPanel({
       ).catch(err =>
         console.log('ERRO WATCHING HEARTBEAT:', err)
       )
-    }, 60000)
+    }, 30000)
 
     return () => clearInterval(interval)
   }, [currentWatching, authHeaders])
 
-  const filteredChannels =
-    useMemo(() => {
-      return channels.filter(channel =>
-        normalize(channel.name).includes(
-          normalize(search)
-        )
+  useEffect(() => {
+    if (!selectedChannel || page !== 'tv') return
+
+    reportWatching(
+      selectedChannel.name,
+      'Canal'
+    )
+
+    const interval = setInterval(() => {
+      reportWatching(
+        selectedChannel.name,
+        'Canal'
       )
-    }, [channels, search])
+    }, 30000)
+
+    return () => clearInterval(interval)
+  }, [selectedChannel, page])
+
+  const filteredChannels = useMemo(() => {
+    return channels.filter(channel =>
+      normalize(channel.name).includes(
+        normalize(search)
+      )
+    )
+  }, [channels, search])
 
   const onlyMovies = useMemo(() => {
     return movies.filter(item => {
-      const category =
-        normalize(item.category || '')
+      const category = normalize(item.category || '')
 
       return (
         !category.includes('series') &&
@@ -345,8 +360,7 @@ function ClientPanel({
 
   const onlySeries = useMemo(() => {
     return movies.filter(item => {
-      const category =
-        normalize(item.category || '')
+      const category = normalize(item.category || '')
 
       return (
         category.includes('series') ||
@@ -355,98 +369,80 @@ function ClientPanel({
     })
   }, [movies])
 
-  const filteredMovies =
-    useMemo(() => {
-      const grouped = {}
+  const filteredMovies = useMemo(() => {
+    const grouped = {}
 
-      onlyMovies.forEach(movie => {
-        const originalTitle = movie.title || ''
-        const cleanTitle =
-          cleanGroupTitle(originalTitle)
+    onlyMovies.forEach(movie => {
+      const originalTitle = movie.title || ''
+      const cleanTitle = cleanGroupTitle(originalTitle)
+      const normalizedTitle = normalize(cleanTitle || originalTitle)
 
-        const normalizedTitle =
-          normalize(cleanTitle || originalTitle)
+      const matchesSearch =
+        normalizedTitle.includes(normalize(movieSearch)) ||
+        normalize(originalTitle).includes(normalize(movieSearch))
 
-        const matchesSearch =
-          normalizedTitle.includes(
-            normalize(movieSearch)
-          ) ||
-          normalize(originalTitle).includes(
-            normalize(movieSearch)
-          )
+      if (!matchesSearch) return
 
-        if (!matchesSearch) return
-
-        if (!grouped[normalizedTitle]) {
-          grouped[normalizedTitle] = {
-            ...movie,
-            title:
-              cleanTitle || originalTitle,
-            episodes: 1,
-            episodeList: [movie]
-          }
-        } else {
-          grouped[normalizedTitle].episodes++
-          grouped[normalizedTitle].episodeList.push(movie)
+      if (!grouped[normalizedTitle]) {
+        grouped[normalizedTitle] = {
+          ...movie,
+          title: cleanTitle || originalTitle,
+          episodes: 1,
+          episodeList: [movie]
         }
-      })
+      } else {
+        grouped[normalizedTitle].episodes++
+        grouped[normalizedTitle].episodeList.push(movie)
+      }
+    })
 
-      return Object.values(grouped)
-    }, [onlyMovies, movieSearch])
+    return Object.values(grouped)
+  }, [onlyMovies, movieSearch])
 
-  const filteredSeries =
-    useMemo(() => {
-      const grouped = {}
+  const filteredSeries = useMemo(() => {
+    const grouped = {}
 
-      onlySeries.forEach(item => {
-        const originalTitle = item.title || ''
-        const cleanTitle =
-          cleanGroupTitle(originalTitle)
+    onlySeries.forEach(item => {
+      const originalTitle = item.title || ''
+      const cleanTitle = cleanGroupTitle(originalTitle)
+      const normalizedTitle = normalize(cleanTitle || originalTitle)
 
-        const normalizedTitle =
-          normalize(cleanTitle || originalTitle)
+      const matchesSearch =
+        normalizedTitle.includes(normalize(seriesSearch)) ||
+        normalize(originalTitle).includes(normalize(seriesSearch))
 
-        const matchesSearch =
-          normalizedTitle.includes(
-            normalize(seriesSearch)
-          ) ||
-          normalize(originalTitle).includes(
-            normalize(seriesSearch)
-          )
+      if (!matchesSearch) return
 
-        if (!matchesSearch) return
-
-        const episodeItem = {
-          ...item,
-          season: getSeasonNumber(originalTitle),
-          episodeNumber: getEpisodeNumber(originalTitle)
-        }
-
-        if (!grouped[normalizedTitle]) {
-          grouped[normalizedTitle] = {
-            ...item,
-            title:
-              cleanTitle || originalTitle,
-            episodes: 1,
-            episodeList: [episodeItem]
-          }
-        } else {
-          grouped[normalizedTitle].episodes++
-          grouped[normalizedTitle].episodeList.push(episodeItem)
-        }
-      })
-
-      return Object.values(grouped).map(item => ({
+      const episodeItem = {
         ...item,
-        episodeList: item.episodeList.sort((a, b) => {
-          if (Number(a.season) !== Number(b.season)) {
-            return Number(a.season) - Number(b.season)
-          }
+        season: getSeasonNumber(originalTitle),
+        episodeNumber: getEpisodeNumber(originalTitle)
+      }
 
-          return a.episodeNumber - b.episodeNumber
-        })
-      }))
-    }, [onlySeries, seriesSearch])
+      if (!grouped[normalizedTitle]) {
+        grouped[normalizedTitle] = {
+          ...item,
+          title: cleanTitle || originalTitle,
+          episodes: 1,
+          episodeList: [episodeItem]
+        }
+      } else {
+        grouped[normalizedTitle].episodes++
+        grouped[normalizedTitle].episodeList.push(episodeItem)
+      }
+    })
+
+    return Object.values(grouped).map(item => ({
+      ...item,
+      episodeList: item.episodeList.sort((a, b) => {
+        if (Number(a.season) !== Number(b.season)) {
+          return Number(a.season) - Number(b.season)
+        }
+
+        return a.episodeNumber - b.episodeNumber
+      })
+    }))
+  }, [onlySeries, seriesSearch])
 
   const seasons = useMemo(() => {
     const found = new Set()
@@ -463,13 +459,9 @@ function ClientPanel({
   const episodesBySeason = useMemo(() => {
     return selectedEpisodes
       .filter(ep =>
-        String(ep.season || '1') ===
-        String(selectedSeason)
+        String(ep.season || '1') === String(selectedSeason)
       )
-      .sort(
-        (a, b) =>
-          a.episodeNumber - b.episodeNumber
-      )
+      .sort((a, b) => a.episodeNumber - b.episodeNumber)
   }, [selectedEpisodes, selectedSeason])
 
   async function openPlayer(item) {
@@ -488,12 +480,8 @@ function ClientPanel({
     await reportWatching(title, type)
 
     setSelectedStream({
-      title:
-        item.title ||
-        item.name,
-      url:
-        item.video ||
-        item.url
+      title: item.title || item.name,
+      url: item.video || item.url
     })
 
     setPlayerOpen(true)
@@ -509,12 +497,8 @@ function ClientPanel({
   }
 
   function chooseEpisode(item) {
-    if (
-      item.episodeList &&
-      item.episodeList.length > 1
-    ) {
-      const firstSeason =
-        item.episodeList[0]?.season || '1'
+    if (item.episodeList && item.episodeList.length > 1) {
+      const firstSeason = item.episodeList[0]?.season || '1'
 
       setSelectedEpisodes(item.episodeList)
       setSelectedSeriesTitle(item.title)
@@ -524,6 +508,12 @@ function ClientPanel({
     }
 
     openPlayer(item)
+  }
+
+  function closePlayer() {
+    setPlayerOpen(false)
+    setSelectedStream(null)
+    clearWatching()
   }
 
   if (loading) {
@@ -560,9 +550,7 @@ function ClientPanel({
               ? styles.activeMenuButton
               : styles.menuButton
           }
-          onClick={() =>
-            setPage('tv')
-          }
+          onClick={() => setPage('tv')}
         >
           TV ao Vivo
         </button>
@@ -573,9 +561,7 @@ function ClientPanel({
               ? styles.activeMenuButton
               : styles.menuButton
           }
-          onClick={() =>
-            setPage('movies')
-          }
+          onClick={() => setPage('movies')}
         >
           Filmes
         </button>
@@ -586,9 +572,7 @@ function ClientPanel({
               ? styles.activeMenuButton
               : styles.menuButton
           }
-          onClick={() =>
-            setPage('series')
-          }
+          onClick={() => setPage('series')}
         >
           Séries
         </button>
@@ -611,8 +595,7 @@ function ClientPanel({
                 </h1>
 
                 <p style={styles.counter}>
-                  {filteredChannels.length}{' '}
-                  canais
+                  {filteredChannels.length} canais
                 </p>
               </div>
 
@@ -620,11 +603,7 @@ function ClientPanel({
                 type='text'
                 placeholder='Buscar canal...'
                 value={search}
-                onChange={e =>
-                  setSearch(
-                    e.target.value
-                  )
-                }
+                onChange={e => setSearch(e.target.value)}
                 style={styles.input}
               />
             </div>
@@ -633,9 +612,7 @@ function ClientPanel({
               <section style={styles.hero}>
                 <div style={styles.playerWrap}>
                   <HlsPlayer
-                    src={
-                      selectedChannel.url
-                    }
+                    src={selectedChannel.url}
                     style={styles.video}
                   />
                 </div>
@@ -650,85 +627,61 @@ function ClientPanel({
                   </h2>
 
                   <p style={styles.category}>
-                    {selectedChannel.category ||
-                      'TV'}
+                    {selectedChannel.category || 'TV'}
                   </p>
                 </div>
               </section>
             )}
 
             <div style={styles.grid}>
-              {filteredChannels.map(
-                channel => (
-                  <div
-                    key={channel.id}
-                    style={
-                      selectedChannel?.id ===
-                      channel.id
-                        ? styles.activeCard
-                        : styles.card
+              {filteredChannels.map(channel => (
+                <div
+                  key={channel.id}
+                  style={
+                    selectedChannel?.id === channel.id
+                      ? styles.activeCard
+                      : styles.card
+                  }
+                  onMouseEnter={e => {
+                    if (selectedChannel?.id !== channel.id) {
+                      e.currentTarget.style.transform = 'scale(1.08)'
+                      e.currentTarget.style.boxShadow =
+                        '0 0 18px rgba(56,189,248,0.35)'
                     }
-                    onMouseEnter={e => {
-                      if (
-                        selectedChannel?.id !==
-                        channel.id
-                      ) {
-                        e.currentTarget.style.transform =
-                          'scale(1.08)'
-
-                        e.currentTarget.style.boxShadow =
-                          '0 0 18px rgba(56,189,248,0.35)'
-                      }
-                    }}
-                    onMouseLeave={e => {
-                      if (
-                        selectedChannel?.id !==
-                        channel.id
-                      ) {
-                        e.currentTarget.style.transform =
-                          'scale(1)'
-
-                        e.currentTarget.style.boxShadow =
-                          'none'
-                      }
-                    }}
-                    onClick={() =>
-                      selectChannel(channel)
+                  }}
+                  onMouseLeave={e => {
+                    if (selectedChannel?.id !== channel.id) {
+                      e.currentTarget.style.transform = 'scale(1)'
+                      e.currentTarget.style.boxShadow = 'none'
                     }
-                  >
-                    <img
-                      loading='lazy'
-                      src={
-                        channel.logo ||
-                        PLACEHOLDER
-                      }
-                      alt={channel.name}
-                      style={styles.channelLogo}
-                      onError={e => {
-                        e.currentTarget.src =
-                          PLACEHOLDER
-                      }}
-                    />
+                  }}
+                  onClick={() => selectChannel(channel)}
+                >
+                  <img
+                    loading='lazy'
+                    src={channel.logo || PLACEHOLDER}
+                    alt={channel.name}
+                    style={styles.channelLogo}
+                    onError={e => {
+                      e.currentTarget.src = PLACEHOLDER
+                    }}
+                  />
 
-                    <div style={styles.channelName}>
-                      {channel.name}
-                    </div>
+                  <div style={styles.channelName}>
+                    {channel.name}
                   </div>
-                )
-              )}
+                </div>
+              ))}
             </div>
           </>
         )}
 
-        {(page === 'movies' ||
-          page === 'series') && (
+        {(page === 'movies' || page === 'series') && (
           <>
             <div style={styles.moviesTop}>
               <div>
                 <h1 style={styles.title}>
-                  {page === 'movies'
-                    ? 'Filmes'
-                    : 'Séries'}
+                  {page === 'movies' ? 'Filmes' : 'Séries'}
                 </h1>
 
                 <p style={styles.counter}>
@@ -753,12 +706,8 @@ function ClientPanel({
                 }
                 onChange={e =>
                   page === 'movies'
-                    ? setMovieSearch(
-                        e.target.value
-                      )
-                    : setSeriesSearch(
-                        e.target.value
-                      )
+                    ? setMovieSearch(e.target.value)
+                    : setSeriesSearch(e.target.value)
                 }
                 style={styles.input}
               />
@@ -773,20 +722,14 @@ function ClientPanel({
                   key={item.id}
                   style={styles.movieCard}
                   onMouseEnter={e => {
-                    e.currentTarget.style.transform =
-                      'scale(1.05)'
-
+                    e.currentTarget.style.transform = 'scale(1.05)'
                     e.currentTarget.style.zIndex = 20
-
                     e.currentTarget.style.boxShadow =
                       '0 10px 30px rgba(0,0,0,0.5)'
                   }}
                   onMouseLeave={e => {
-                    e.currentTarget.style.transform =
-                      'scale(1)'
-
+                    e.currentTarget.style.transform = 'scale(1)'
                     e.currentTarget.style.zIndex = 1
-
                     e.currentTarget.style.boxShadow =
                       '0 0 0 rgba(0,0,0,0)'
                   }}
@@ -799,14 +742,10 @@ function ClientPanel({
 
                   <img
                     loading='lazy'
-                    src={
-                      item.image ||
-                      PLACEHOLDER
-                    }
+                    src={item.image || PLACEHOLDER}
                     style={styles.movieImage}
                     onError={e => {
-                      e.currentTarget.src =
-                        PLACEHOLDER
+                      e.currentTarget.src = PLACEHOLDER
                     }}
                   />
 
@@ -821,9 +760,7 @@ function ClientPanel({
 
                     <button
                       style={styles.watchButton}
-                      onClick={() =>
-                        chooseEpisode(item)
-                      }
+                      onClick={() => chooseEpisode(item)}
                     >
                       {item.episodes > 1
                         ? 'Episódios'
@@ -839,9 +776,7 @@ function ClientPanel({
         <PlayerModal
           open={playerOpen}
           stream={selectedStream}
-          onClose={() =>
-            setPlayerOpen(false)
-          }
+          onClose={closePlayer}
         />
 
         {episodesModal && (
@@ -854,16 +789,13 @@ function ClientPanel({
                   </h2>
 
                   <p style={styles.episodesCounter}>
-                    {selectedEpisodes.length}{' '}
-                    episódios
+                    {selectedEpisodes.length} episódios
                   </p>
                 </div>
 
                 <button
                   style={styles.closeEpisodesButton}
-                  onClick={() =>
-                    setEpisodesModal(false)
-                  }
+                  onClick={() => setEpisodesModal(false)}
                 >
                   ✕
                 </button>
@@ -874,14 +806,11 @@ function ClientPanel({
                   <button
                     key={season}
                     style={
-                      String(selectedSeason) ===
-                      String(season)
+                      String(selectedSeason) === String(season)
                         ? styles.activeSeasonButton
                         : styles.seasonButton
                     }
-                    onClick={() =>
-                      setSelectedSeason(season)
-                    }
+                    onClick={() => setSelectedSeason(season)}
                   >
                     Temporada {season}
                   </button>
@@ -889,29 +818,27 @@ function ClientPanel({
               </div>
 
               <div style={styles.episodesList}>
-                {episodesBySeason.map(
-                  (ep, index) => (
-                    <button
-                      key={`${ep.id}-${index}`}
-                      style={styles.episodeItem}
-                      onClick={() => {
-                        openPlayer(ep)
-                        setEpisodesModal(false)
-                      }}
-                    >
-                      <span>
-                        Episódio{' '}
-                        {ep.episodeNumber !== 9999
-                          ? ep.episodeNumber
-                          : index + 1}
-                      </span>
+                {episodesBySeason.map((ep, index) => (
+                  <button
+                    key={`${ep.id}-${index}`}
+                    style={styles.episodeItem}
+                    onClick={() => {
+                      openPlayer(ep)
+                      setEpisodesModal(false)
+                    }}
+                  >
+                    <span>
+                      Episódio{' '}
+                      {ep.episodeNumber !== 9999
+                        ? ep.episodeNumber
+                        : index + 1}
+                    </span>
 
-                      <small>
-                        {ep.title}
-                      </small>
-                    </button>
-                  )
-                )}
+                    <small>
+                      {ep.title}
+                    </small>
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -925,8 +852,7 @@ const styles = {
   playerLoading: {
     position: 'absolute',
     inset: 0,
-    background:
-      'rgba(0,0,0,0.82)',
+    background: 'rgba(0,0,0,0.82)',
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'center',
@@ -939,18 +865,15 @@ const styles = {
     width: 60,
     height: 60,
     border: '5px solid #0f172a',
-    borderTop:
-      '5px solid #38bdf8',
+    borderTop: '5px solid #38bdf8',
     borderRadius: '50%',
-    animation:
-      'spin 1s linear infinite'
+    animation: 'spin 1s linear infinite'
   },
 
   playerError: {
     position: 'absolute',
     inset: 0,
-    background:
-      'rgba(0,0,0,0.92)',
+    background: 'rgba(0,0,0,0.92)',
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'center',
@@ -981,29 +904,24 @@ const styles = {
     width: 60,
     height: 60,
     border: '5px solid #0f172a',
-    borderTop:
-      '5px solid #38bdf8',
+    borderTop: '5px solid #38bdf8',
     borderRadius: '50%',
-    animation:
-      'spin 1s linear infinite'
+    animation: 'spin 1s linear infinite'
   },
 
   app: {
     display: 'flex',
     minHeight: '100vh',
-    background:
-      'linear-gradient(180deg,#000814,#020617)',
+    background: 'linear-gradient(180deg,#000814,#020617)',
     color: '#fff',
     fontFamily: 'Arial'
   },
 
   sidebar: {
     width: 260,
-    background:
-      'linear-gradient(180deg,#021033,#000814)',
+    background: 'linear-gradient(180deg,#021033,#000814)',
     padding: 18,
-    borderRight:
-      '1px solid rgba(56,189,248,0.15)',
+    borderRight: '1px solid rgba(56,189,248,0.15)',
     display: 'flex',
     flexDirection: 'column',
     position: 'sticky',
@@ -1020,13 +938,11 @@ const styles = {
   },
 
   userBox: {
-    background:
-      'rgba(15,23,42,0.95)',
+    background: 'rgba(15,23,42,0.95)',
     padding: 18,
     borderRadius: 20,
     marginBottom: 20,
-    border:
-      '1px solid rgba(56,189,248,0.12)'
+    border: '1px solid rgba(56,189,248,0.12)'
   },
 
   userType: {
@@ -1052,8 +968,7 @@ const styles = {
   },
 
   activeMenuButton: {
-    background:
-      'linear-gradient(90deg,#38bdf8,#0ea5e9)',
+    background: 'linear-gradient(90deg,#38bdf8,#0ea5e9)',
     border: 'none',
     padding: 13,
     borderRadius: 14,
@@ -1062,8 +977,7 @@ const styles = {
     fontWeight: 'bold',
     textAlign: 'left',
     marginBottom: 10,
-    boxShadow:
-      '0 0 20px rgba(56,189,248,0.35)'
+    boxShadow: '0 0 20px rgba(56,189,248,0.35)'
   },
 
   redButton: {
@@ -1072,8 +986,7 @@ const styles = {
     padding: 14,
     border: 'none',
     borderRadius: 14,
-    background:
-      'linear-gradient(90deg,#ef4444,#dc2626)',
+    background: 'linear-gradient(90deg,#ef4444,#dc2626)',
     color: '#fff',
     fontWeight: 'bold',
     cursor: 'pointer'
@@ -1114,16 +1027,14 @@ const styles = {
   },
 
   hero: {
-    background:
-      'linear-gradient(180deg,#07142b,#020617)',
+    background: 'linear-gradient(180deg,#07142b,#020617)',
     borderRadius: 24,
     padding: 12,
     marginBottom: 16,
     position: 'sticky',
     top: 10,
     zIndex: 100,
-    boxShadow:
-      '0 10px 40px rgba(0,0,0,0.4)'
+    boxShadow: '0 10px 40px rgba(0,0,0,0.4)'
   },
 
   playerWrap: {
@@ -1144,8 +1055,7 @@ const styles = {
   },
 
   liveBadge: {
-    background:
-      'linear-gradient(90deg,#ef4444,#dc2626)',
+    background: 'linear-gradient(90deg,#ef4444,#dc2626)',
     padding: '6px 12px',
     borderRadius: 999,
     fontSize: 11,
@@ -1163,36 +1073,30 @@ const styles = {
 
   grid: {
     display: 'grid',
-    gridTemplateColumns:
-      'repeat(auto-fill,minmax(82px,1fr))',
+    gridTemplateColumns: 'repeat(auto-fill,minmax(82px,1fr))',
     gap: 8
   },
 
   card: {
-    background:
-      'linear-gradient(180deg,#111827,#020617)',
+    background: 'linear-gradient(180deg,#111827,#020617)',
     borderRadius: 12,
     padding: 8,
     textAlign: 'center',
     cursor: 'pointer',
     transition: '0.18s ease',
-    border:
-      '1px solid rgba(255,255,255,0.04)',
+    border: '1px solid rgba(255,255,255,0.04)',
     position: 'relative'
   },
 
   activeCard: {
-    background:
-      'linear-gradient(180deg,#0ea5e9,#0369a1)',
+    background: 'linear-gradient(180deg,#0ea5e9,#0369a1)',
     borderRadius: 12,
     padding: 8,
     textAlign: 'center',
     cursor: 'pointer',
     transform: 'scale(1.05)',
-    boxShadow:
-      '0 0 25px rgba(56,189,248,0.45)',
-    border:
-      '1px solid #38bdf8'
+    boxShadow: '0 0 25px rgba(56,189,248,0.45)',
+    border: '1px solid #38bdf8'
   },
 
   channelLogo: {
@@ -1220,8 +1124,7 @@ const styles = {
 
   moviesGrid: {
     display: 'grid',
-    gridTemplateColumns:
-      'repeat(auto-fill,minmax(170px,1fr))',
+    gridTemplateColumns: 'repeat(auto-fill,minmax(170px,1fr))',
     gap: 16
   },
 
@@ -1234,8 +1137,7 @@ const styles = {
     cursor: 'pointer',
     transition: '0.25s',
     transform: 'scale(1)',
-    boxShadow:
-      '0 0 0 rgba(0,0,0,0)'
+    boxShadow: '0 0 0 rgba(0,0,0,0)'
   },
 
   episodeBadge: {
@@ -1243,8 +1145,7 @@ const styles = {
     top: 8,
     right: 8,
     zIndex: 5,
-    background:
-      'linear-gradient(90deg,#38bdf8,#0ea5e9)',
+    background: 'linear-gradient(90deg,#38bdf8,#0ea5e9)',
     color: '#000',
     padding: '5px 8px',
     borderRadius: 999,
@@ -1262,8 +1163,7 @@ const styles = {
   movieOverlay: {
     position: 'absolute',
     inset: 0,
-    background:
-      'linear-gradient(to top,rgba(0,0,0,0.98),rgba(0,0,0,0.08))',
+    background: 'linear-gradient(to top,rgba(0,0,0,0.98),rgba(0,0,0,0.08))',
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'flex-end',
@@ -1284,8 +1184,7 @@ const styles = {
   },
 
   watchButton: {
-    background:
-      'linear-gradient(90deg,#ef4444,#dc2626)',
+    background: 'linear-gradient(90deg,#ef4444,#dc2626)',
     border: 'none',
     padding: 10,
     borderRadius: 10,
@@ -1299,8 +1198,7 @@ const styles = {
   episodesOverlay: {
     position: 'fixed',
     inset: 0,
-    background:
-      'rgba(0,0,0,0.82)',
+    background: 'rgba(0,0,0,0.82)',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1311,19 +1209,16 @@ const styles = {
     width: '90%',
     maxWidth: 760,
     maxHeight: '82vh',
-    background:
-      'linear-gradient(180deg,#07142b,#020617)',
+    background: 'linear-gradient(180deg,#07142b,#020617)',
     borderRadius: 24,
     padding: 20,
     overflow: 'hidden',
-    border:
-      '1px solid rgba(56,189,248,0.25)'
+    border: '1px solid rgba(56,189,248,0.25)'
   },
 
   episodesHeader: {
     display: 'flex',
-    justifyContent:
-      'space-between',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
     gap: 12
@@ -1357,8 +1252,7 @@ const styles = {
 
   seasonButton: {
     background: '#0f172a',
-    border:
-      '1px solid rgba(56,189,248,0.2)',
+    border: '1px solid rgba(56,189,248,0.2)',
     color: '#cbd5e1',
     borderRadius: 999,
     padding: '9px 14px',
@@ -1368,8 +1262,7 @@ const styles = {
   },
 
   activeSeasonButton: {
-    background:
-      'linear-gradient(90deg,#38bdf8,#0ea5e9)',
+    background: 'linear-gradient(90deg,#38bdf8,#0ea5e9)',
     border: 'none',
     color: '#000',
     borderRadius: 999,
@@ -1389,10 +1282,8 @@ const styles = {
   },
 
   episodeItem: {
-    background:
-      'rgba(15,23,42,0.95)',
-    border:
-      '1px solid rgba(56,189,248,0.15)',
+    background: 'rgba(15,23,42,0.95)',
+    border: '1px solid rgba(56,189,248,0.15)',
     color: '#fff',
     borderRadius: 14,
     padding: 14,
