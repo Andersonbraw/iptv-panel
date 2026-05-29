@@ -8,28 +8,15 @@ function AdminUsers({
   users,
   reloadUsers
 }) {
-  const [credits, setCredits] =
-    useState(1)
-
-  const [
-    createdLogin,
-    setCreatedLogin
-  ] = useState(null)
-
-  const [search, setSearch] =
-    useState('')
-
-  const [clientName, setClientName] =
-    useState('')
-
-  const [loading, setLoading] =
-    useState(false)
+  const [credits, setCredits] = useState(1)
+  const [createdLogin, setCreatedLogin] = useState(null)
+  const [search, setSearch] = useState('')
+  const [clientName, setClientName] = useState('')
+  const [loading, setLoading] = useState(false)
 
   const headers = useMemo(() => {
     return {
-      Authorization: `Bearer ${localStorage.getItem(
-        'token'
-      )}`
+      Authorization: `Bearer ${localStorage.getItem('token')}`
     }
   }, [])
 
@@ -48,6 +35,30 @@ function AdminUsers({
       .replace(/[\u0300-\u036f]/g, '')
   }
 
+  function getUserStatus(user) {
+    if (!user.watching_updated_at) {
+      return {
+        online: false,
+        text: '🔴 Offline'
+      }
+    }
+
+    const lastUpdate = new Date(user.watching_updated_at).getTime()
+    const diffMinutes = (Date.now() - lastUpdate) / 1000 / 60
+
+    if (diffMinutes <= 2) {
+      return {
+        online: true,
+        text: '🟢 Online agora'
+      }
+    }
+
+    return {
+      online: false,
+      text: `🔴 Offline há ${Math.floor(diffMinutes)} min`
+    }
+  }
+
   const filteredUsers = useMemo(() => {
     return users.filter(user => {
       const text = normalize(`
@@ -55,34 +66,19 @@ function AdminUsers({
         ${user.email || ''}
       `)
 
-      return text.includes(
-        normalize(search)
-      )
+      return text.includes(normalize(search))
     })
   }, [users, search])
 
   const stats = useMemo(() => {
     return {
       total: users.length,
-
-      active: users.filter(
-        u =>
-          u.status ===
-          'active'
-      ).length,
-
-      blocked: users.filter(
-        u =>
-          u.status ===
-          'blocked'
-      ).length
+      active: users.filter(u => u.status === 'active').length,
+      blocked: users.filter(u => u.status === 'blocked').length
     }
   }, [users])
 
-  async function updateUser(
-    id,
-    data
-  ) {
+  async function updateUser(id, data) {
     try {
       setLoading(true)
 
@@ -95,8 +91,7 @@ function AdminUsers({
       reloadUsers()
     } catch (err) {
       alert(
-        err.response?.data
-          ?.error ||
+        err.response?.data?.error ||
           'Erro ao atualizar usuário'
       )
     } finally {
@@ -104,42 +99,27 @@ function AdminUsers({
     }
   }
 
-  async function addDays(
-    user,
-    days
-  ) {
+  async function addDays(user, days) {
     try {
       const now = new Date()
 
       const currentExpire =
         user.expires_at
-          ? new Date(
-              user.expires_at
-            )
+          ? new Date(user.expires_at)
           : null
 
       const baseDate =
-        currentExpire &&
-        currentExpire > now
+        currentExpire && currentExpire > now
           ? currentExpire
           : now
 
-      baseDate.setDate(
-        baseDate.getDate() +
-          days
-      )
+      baseDate.setDate(baseDate.getDate() + days)
 
-      await updateUser(
-        user.id,
-        {
-          expires_at:
-            baseDate.toISOString()
-        }
-      )
+      await updateUser(user.id, {
+        expires_at: baseDate.toISOString()
+      })
     } catch {
-      alert(
-        'Erro ao adicionar dias'
-      )
+      alert('Erro ao adicionar dias')
     }
   }
 
@@ -150,21 +130,16 @@ function AdminUsers({
       await axios.post(
         `${API}/admin/credits/add`,
         {
-          amount:
-            Number(credits)
+          amount: Number(credits)
         },
         { headers }
       )
 
-      alert(
-        'Créditos adicionados'
-      )
-
+      alert('Créditos adicionados')
       reloadUsers()
     } catch (err) {
       alert(
-        err.response?.data
-          ?.error ||
+        err.response?.data?.error ||
           'Erro ao adicionar créditos'
       )
     } finally {
@@ -176,31 +151,24 @@ function AdminUsers({
     try {
       setLoading(true)
 
-      const res =
-        await axios.post(
-          `${API}/admin/users/create-random`,
-          {
-            name: clientName
-          },
-          { headers }
-        )
-
-      setCreatedLogin(
+      const res = await axios.post(
+        `${API}/admin/users/create-random`,
         {
-          ...res.data.login,
-          name:
-            clientName ||
-            'Cliente'
-        }
+          name: clientName
+        },
+        { headers }
       )
 
-      setClientName('')
+      setCreatedLogin({
+        ...res.data.login,
+        name: clientName || 'Cliente'
+      })
 
+      setClientName('')
       reloadUsers()
     } catch (err) {
       alert(
-        err.response?.data
-          ?.error ||
+        err.response?.data?.error ||
           'Erro ao criar login'
       )
     } finally {
@@ -209,10 +177,7 @@ function AdminUsers({
   }
 
   async function deleteUser(id) {
-    const confirmDelete =
-      confirm(
-        'Excluir este cliente?'
-      )
+    const confirmDelete = confirm('Excluir este cliente?')
 
     if (!confirmDelete) return
 
@@ -227,8 +192,7 @@ function AdminUsers({
       reloadUsers()
     } catch (err) {
       alert(
-        err.response?.data
-          ?.error ||
+        err.response?.data?.error ||
           'Erro ao excluir cliente'
       )
     } finally {
@@ -255,27 +219,16 @@ Senha: ${createdLogin.password}
       <div style={styles.stats}>
         <div style={styles.statCard}>
           <h2>{stats.total}</h2>
-
           <p>Total usuários</p>
         </div>
 
-        <div
-          style={
-            styles.statCardGreen
-          }
-        >
+        <div style={styles.statCardGreen}>
           <h2>{stats.active}</h2>
-
           <p>Ativos</p>
         </div>
 
-        <div
-          style={
-            styles.statCardRed
-          }
-        >
+        <div style={styles.statCardRed}>
           <h2>{stats.blocked}</h2>
-
           <p>Bloqueados</p>
         </div>
       </div>
@@ -286,81 +239,47 @@ Senha: ${createdLogin.password}
             Usuários do sistema
           </h2>
 
-          <p
-            style={
-              styles.subtitle
-            }
-          >
+          <p style={styles.subtitle}>
             Controle completo dos clientes
           </p>
         </div>
 
-        <div
-          style={
-            styles.topActions
-          }
-        >
+        <div style={styles.topActions}>
           <input
             type='text'
             placeholder='Buscar usuário...'
             value={search}
-            onChange={e =>
-              setSearch(
-                e.target.value
-              )
-            }
-            style={
-              styles.searchInput
-            }
+            onChange={e => setSearch(e.target.value)}
+            style={styles.searchInput}
           />
 
           <input
             type='text'
             placeholder='Nome do cliente'
             value={clientName}
-            onChange={e =>
-              setClientName(
-                e.target.value
-              )
-            }
-            style={
-              styles.nameInput
-            }
+            onChange={e => setClientName(e.target.value)}
+            style={styles.nameInput}
           />
 
           <input
             type='number'
             min='1'
             value={credits}
-            onChange={e =>
-              setCredits(
-                e.target.value
-              )
-            }
-            style={
-              styles.creditInput
-            }
+            onChange={e => setCredits(e.target.value)}
+            style={styles.creditInput}
           />
 
           <button
-            style={
-              styles.yellowButton
-            }
-            onClick={
-              addCredits
-            }
+            style={styles.yellowButton}
+            onClick={addCredits}
             disabled={loading}
           >
             Créditos
           </button>
 
           <button
-            style={
-              styles.blueButton
-            }
-            onClick={
-              createRandomLogin
-            }
+            style={styles.blueButton}
+            onClick={createRandomLogin}
             disabled={loading}
           >
             Login aleatório
@@ -369,46 +288,30 @@ Senha: ${createdLogin.password}
       </div>
 
       {createdLogin && (
-        <div
-          style={
-            styles.loginBox
-          }
-        >
-          <h3>
-            Login criado
-          </h3>
+        <div style={styles.loginBox}>
+          <h3>Login criado</h3>
 
           <input
             readOnly
             value={`Nome: ${createdLogin.name}`}
-            style={
-              styles.copyInput
-            }
+            style={styles.copyInput}
           />
 
           <input
             readOnly
             value={`Email: ${createdLogin.email}`}
-            style={
-              styles.copyInput
-            }
+            style={styles.copyInput}
           />
 
           <input
             readOnly
             value={`Senha: ${createdLogin.password}`}
-            style={
-              styles.copyInput
-            }
+            style={styles.copyInput}
           />
 
           <button
-            style={
-              styles.greenButton
-            }
-            onClick={
-              copyLogin
-            }
+            style={styles.greenButton}
+            onClick={copyLogin}
           >
             Copiar login
           </button>
@@ -421,288 +324,207 @@ Senha: ${createdLogin.password}
         </div>
       )}
 
-      {filteredUsers.map(user => (
-        <div
-          key={user.id}
-          style={styles.card}
-        >
-          <div>
-            <strong
-              style={
-                styles.userName
-              }
-            >
-              {user.name}
-            </strong>
+      {filteredUsers.map(user => {
+        const userStatus = getUserStatus(user)
 
-            <p style={styles.email}>
-              {user.email}
-            </p>
+        return (
+          <div
+            key={user.id}
+            style={styles.card}
+          >
+            <div>
+              <strong style={styles.userName}>
+                {user.name}
+              </strong>
 
-            <small>
-              Plano:{' '}
-              {user.plan ||
-                'free'}{' '}
-              • Conexões:{' '}
-              {user.max_connections ||
-                1}
-            </small>
+              <p style={styles.email}>
+                {user.email}
+              </p>
 
-            <br />
+              <small>
+                Plano: {user.plan || 'free'} • Conexões:{' '}
+                {user.max_connections || 1}
+              </small>
 
-            <small>
-              Créditos:{' '}
-              {user.credits ||
-                0}
-            </small>
+              <br />
 
-            <br />
+              <small>
+                Créditos: {user.credits || 0}
+              </small>
 
-            <small>
-              Vence em:{' '}
-              {user.expires_at
-                ? new Date(
-                    user.expires_at
-                  ).toLocaleDateString(
-                    'pt-BR'
-                  )
-                : 'Sem vencimento'}
-            </small>
+              <br />
 
-            <br />
+              <small>
+                Vence em:{' '}
+                {user.expires_at
+                  ? new Date(user.expires_at).toLocaleDateString('pt-BR')
+                  : 'Sem vencimento'}
+              </small>
 
-            <small style={styles.watchingText}>
-              Assistindo:{' '}
-              {user.watching
-                ? `${user.watching_type || 'Conteúdo'}: ${user.watching}`
-                : 'Nada no momento'}
-            </small>
+              <br />
 
-            {user.watching_updated_at && (
-              <>
-                <br />
+              <small style={styles.watchingText}>
+                Assistindo:{' '}
+                {user.watching
+                  ? `${user.watching_type || 'Conteúdo'}: ${user.watching}`
+                  : 'Nada no momento'}
+              </small>
 
-                <small style={styles.watchingTime}>
-                  Atualizado:{' '}
-                  {new Date(
-                    user.watching_updated_at
-                  ).toLocaleString(
-                    'pt-BR'
-                  )}
-                </small>
-              </>
-            )}
+              <br />
 
-            <div
-              style={
-                styles.quickActions
-              }
-            >
-              <button
-                style={
-                  styles.smallDarkButton
-                }
-                onClick={() =>
-                  updateUser(
-                    user.id,
-                    {
-                      max_connections: 1
-                    }
-                  )
-                }
-              >
-                1 conexão
-              </button>
-
-              <button
-                style={
-                  styles.smallDarkButton
-                }
-                onClick={() =>
-                  updateUser(
-                    user.id,
-                    {
-                      max_connections: 2
-                    }
-                  )
-                }
-              >
-                2 conexões
-              </button>
-
-              <button
-                style={
-                  styles.smallDarkButton
-                }
-                onClick={() =>
-                  updateUser(
-                    user.id,
-                    {
-                      max_connections: 5
-                    }
-                  )
-                }
-              >
-                5 conexões
-              </button>
-
-              <button
-                style={
-                  styles.smallYellowButton
-                }
-                onClick={() =>
-                  addDays(
-                    user,
-                    7
-                  )
-                }
-              >
-                +7 dias
-              </button>
-
-              <button
-                style={
-                  styles.smallYellowButton
-                }
-                onClick={() =>
-                  addDays(
-                    user,
-                    15
-                  )
-                }
-              >
-                +15 dias
-              </button>
-
-              <button
-                style={
-                  styles.smallYellowButton
-                }
-                onClick={() =>
-                  addDays(
-                    user,
-                    30
-                  )
-                }
-              >
-                +30 dias
-              </button>
-            </div>
-          </div>
-
-          <div style={styles.right}>
-            <span
-              style={
-                styles.role
-              }
-            >
-              {user.role}
-            </span>
-
-            <p
-              style={{
-                color:
-                  user.status ===
-                  'active'
+              <small
+                style={{
+                  color: userStatus.online
                     ? '#22c55e'
-                    : '#ef4444'
-              }}
-            >
-              {user.status}
-            </p>
-
-            <div
-              style={
-                styles.actions
-              }
-            >
-              <button
-                style={
-                  styles.greenButton
-                }
-                onClick={() =>
-                  updateUser(
-                    user.id,
-                    {
-                      status:
-                        'active'
-                    }
-                  )
-                }
+                    : '#ef4444',
+                  fontWeight: 'bold'
+                }}
               >
-                Ativar
-              </button>
+                {userStatus.text}
+              </small>
 
-              <button
-                style={
-                  styles.redButton
-                }
-                onClick={() =>
-                  updateUser(
-                    user.id,
-                    {
-                      status:
-                        'blocked'
-                    }
-                  )
-                }
-              >
-                Bloquear
-              </button>
+              {user.watching_updated_at && (
+                <>
+                  <br />
 
-              <button
-                style={
-                  styles.blueButton
-                }
-                onClick={() =>
-                  updateUser(
-                    user.id,
-                    {
-                      plan:
-                        'premium'
-                    }
-                  )
-                }
-              >
-                Premium
-              </button>
+                  <small style={styles.watchingTime}>
+                    Atualizado:{' '}
+                    {new Date(user.watching_updated_at).toLocaleString('pt-BR')}
+                  </small>
+                </>
+              )}
 
-              <button
-                style={
-                  styles.grayButton
-                }
-                onClick={() =>
-                  updateUser(
-                    user.id,
-                    {
-                      plan:
-                        'free'
-                    }
-                  )
-                }
-              >
-                Free
-              </button>
-
-              {user.role !==
-                'admin' && (
+              <div style={styles.quickActions}>
                 <button
-                  style={
-                    styles.deleteButton
-                  }
+                  style={styles.smallDarkButton}
                   onClick={() =>
-                    deleteUser(
-                      user.id
-                    )
+                    updateUser(user.id, {
+                      max_connections: 1
+                    })
                   }
                 >
-                  Excluir
+                  1 conexão
                 </button>
-              )}
+
+                <button
+                  style={styles.smallDarkButton}
+                  onClick={() =>
+                    updateUser(user.id, {
+                      max_connections: 2
+                    })
+                  }
+                >
+                  2 conexões
+                </button>
+
+                <button
+                  style={styles.smallDarkButton}
+                  onClick={() =>
+                    updateUser(user.id, {
+                      max_connections: 5
+                    })
+                  }
+                >
+                  5 conexões
+                </button>
+
+                <button
+                  style={styles.smallYellowButton}
+                  onClick={() => addDays(user, 7)}
+                >
+                  +7 dias
+                </button>
+
+                <button
+                  style={styles.smallYellowButton}
+                  onClick={() => addDays(user, 15)}
+                >
+                  +15 dias
+                </button>
+
+                <button
+                  style={styles.smallYellowButton}
+                  onClick={() => addDays(user, 30)}
+                >
+                  +30 dias
+                </button>
+              </div>
+            </div>
+
+            <div style={styles.right}>
+              <span style={styles.role}>
+                {user.role}
+              </span>
+
+              <p
+                style={{
+                  color:
+                    user.status === 'active'
+                      ? '#22c55e'
+                      : '#ef4444'
+                }}
+              >
+                {user.status}
+              </p>
+
+              <div style={styles.actions}>
+                <button
+                  style={styles.greenButton}
+                  onClick={() =>
+                    updateUser(user.id, {
+                      status: 'active'
+                    })
+                  }
+                >
+                  Ativar
+                </button>
+
+                <button
+                  style={styles.redButton}
+                  onClick={() =>
+                    updateUser(user.id, {
+                      status: 'blocked'
+                    })
+                  }
+                >
+                  Bloquear
+                </button>
+
+                <button
+                  style={styles.blueButton}
+                  onClick={() =>
+                    updateUser(user.id, {
+                      plan: 'premium'
+                    })
+                  }
+                >
+                  Premium
+                </button>
+
+                <button
+                  style={styles.grayButton}
+                  onClick={() =>
+                    updateUser(user.id, {
+                      plan: 'free'
+                    })
+                  }
+                >
+                  Free
+                </button>
+
+                {user.role !== 'admin' && (
+                  <button
+                    style={styles.deleteButton}
+                    onClick={() => deleteUser(user.id)}
+                  >
+                    Excluir
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -748,8 +570,7 @@ const styles = {
 
   topBar: {
     display: 'flex',
-    justifyContent:
-      'space-between',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
     gap: 20,
@@ -774,8 +595,7 @@ const styles = {
   searchInput: {
     padding: 12,
     borderRadius: 12,
-    border:
-      '1px solid #334155',
+    border: '1px solid #334155',
     background: '#020617',
     color: '#fff',
     width: 220
@@ -784,8 +604,7 @@ const styles = {
   nameInput: {
     padding: 12,
     borderRadius: 12,
-    border:
-      '1px solid #334155',
+    border: '1px solid #334155',
     background: '#020617',
     color: '#fff',
     width: 220
@@ -795,8 +614,7 @@ const styles = {
     width: 90,
     padding: 12,
     borderRadius: 12,
-    border:
-      '1px solid #334155',
+    border: '1px solid #334155',
     background: '#020617',
     color: '#fff'
   },
@@ -806,8 +624,7 @@ const styles = {
     padding: 18,
     borderRadius: 18,
     marginBottom: 20,
-    border:
-      '1px solid #38bdf8'
+    border: '1px solid #38bdf8'
   },
 
   copyInput: {
@@ -815,8 +632,7 @@ const styles = {
     padding: 12,
     marginBottom: 10,
     borderRadius: 12,
-    border:
-      '1px solid #334155',
+    border: '1px solid #334155',
     background: '#07142b',
     color: '#fff',
     boxSizing: 'border-box'
@@ -824,8 +640,7 @@ const styles = {
 
   loading: {
     background: '#020617',
-    border:
-      '1px solid #12345f',
+    border: '1px solid #12345f',
     padding: 14,
     borderRadius: 14,
     marginBottom: 20,
@@ -835,16 +650,14 @@ const styles = {
 
   card: {
     display: 'flex',
-    justifyContent:
-      'space-between',
+    justifyContent: 'space-between',
     gap: 20,
     background:
       'linear-gradient(180deg,#020617,#111827)',
     padding: 20,
     borderRadius: 20,
     marginTop: 16,
-    border:
-      '1px solid rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.05)',
     flexWrap: 'wrap'
   },
 
@@ -879,8 +692,7 @@ const styles = {
     display: 'flex',
     gap: 8,
     flexWrap: 'wrap',
-    justifyContent:
-      'flex-end',
+    justifyContent: 'flex-end',
     marginTop: 10
   },
 
