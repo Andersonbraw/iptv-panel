@@ -3,6 +3,7 @@ import cors from 'cors'
 import jwt from 'jsonwebtoken'
 import pg from 'pg'
 import dotenv from 'dotenv'
+import crypto from 'crypto'
 import { XMLParser } from 'fast-xml-parser'
 
 dotenv.config()
@@ -49,12 +50,7 @@ const app = express()
 const PORT = process.env.PORT || 3000
 const JWT_SECRET = 'iptv_panel_secret_2026'
 
-app.use(
-  cors({
-    origin: '*'
-  })
-)
-
+app.use(cors({ origin: '*' }))
 app.use(express.json({ limit: '50mb' }))
 
 const pool = new Pool({
@@ -102,6 +98,26 @@ async function initDb() {
 
   await pool.query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS watching_updated_at TIMESTAMP
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      session_id TEXT UNIQUE NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW(),
+      last_seen TIMESTAMP DEFAULT NOW()
+    )
+  `)
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id
+    ON user_sessions(user_id)
+  `)
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_session_id
+    ON user_sessions(session_id)
   `)
 
   await pool.query(`
@@ -163,7 +179,7 @@ async function initDb() {
 
 initDb()
 
-function auth(req, res, next) {
+async function auth(req, res, next) {
   const header = req.headers.authorization
 
   if (!header) {
@@ -175,9 +191,73 @@ function auth(req, res, next) {
   const token = header.replace('Bearer ', '')
 
   try {
-    req.user = jwt.verify(token, JWT_SECRET)
+    const decoded = jwt.verify(token, JWT_SECRET)
+
+    const result = await pool.query(
+      `
+      SELECT
+        users.*,
+        user_sessions.session_id
+      FROM users
+      LEFT JOIN user_sessions
+        ON user_sessions.user_id = users.id
+        AND user_sessions.session_id = $2
+      WHERE users.id = $1
+      LIMIT 1
+      `,
+      [
+        decoded.id,
+        decoded.session_id || ''
+      ]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({
+        error: 'usuário não encontrado'
+      })
+    }
+
+    const user = result.rows[0]
+
+    if (!user.session_id) {
+      return res.status(401).json({
+        error: 'sessão expirada por novo login'
+      })
+    }
+
+    if (String(user.status).trim() !== 'active') {
+      return res.status(403).json({
+        error: 'usuário bloqueado'
+      })
+    }
+
+    if (
+      user.expires_at &&
+      new Date(user.expires_at).getTime() < Date.now()
+    ) {
+      return res.status(403).json({
+        error: 'assinatura vencida'
+      })
+    }
+
+    await pool.query(
+      `
+      UPDATE user_sessions
+      SET last_seen = NOW()
+      WHERE session_id = $1
+      `,
+      [decoded.session_id]
+    )
+
+    req.user = {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      session_id: decoded.session_id
+    }
+
     next()
-  } catch {
+  } catch (err) {
     return res.status(401).json({
       error: 'token inválido'
     })
@@ -538,6 +618,53 @@ function isBadMovieItem(movie) {
   )
 }
 
+async function createSessionForUser(user) {
+  const maxConnections =
+    Math.max(
+      1,
+      Number(user.max_connections || 1)
+    )
+
+  const sessionId =
+    crypto.randomUUID()
+
+  await pool.query(
+    `
+    INSERT INTO user_sessions
+    (
+      user_id,
+      session_id,
+      created_at,
+      last_seen
+    )
+    VALUES ($1,$2,NOW(),NOW())
+    `,
+    [
+      user.id,
+      sessionId
+    ]
+  )
+
+  await pool.query(
+    `
+    DELETE FROM user_sessions
+    WHERE id IN (
+      SELECT id
+      FROM user_sessions
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+      OFFSET $2
+    )
+    `,
+    [
+      user.id,
+      maxConnections
+    ]
+  )
+
+  return sessionId
+}
+
 app.post('/register', async (req, res) => {
   try {
     const {
@@ -559,7 +686,7 @@ app.post('/register', async (req, res) => {
         max_connections,
         expires_at
       )
-      VALUES ($1,$2,$3,'client','active','free',1)
+      VALUES ($1,$2,$3,'client','active','free',1,NULL)
       `,
       [
         name,
@@ -626,12 +753,16 @@ app.post('/login', async (req, res) => {
       })
     }
 
+    const sessionId =
+      await createSessionForUser(user)
+
     const token =
       jwt.sign(
         {
           id: user.id,
           email: user.email,
-          role: user.role
+          role: user.role,
+          session_id: sessionId
         },
         JWT_SECRET,
         {
@@ -641,7 +772,20 @@ app.post('/login', async (req, res) => {
 
     res.json({
       token,
-      user
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        plan: user.plan,
+        max_connections: user.max_connections,
+        expires_at: user.expires_at,
+        credits: user.credits,
+        watching: user.watching,
+        watching_type: user.watching_type,
+        watching_updated_at: user.watching_updated_at
+      }
     })
   } catch (err) {
     console.log(err)
@@ -652,25 +796,51 @@ app.post('/login', async (req, res) => {
   }
 })
 
+app.post('/logout', auth, async (req, res) => {
+  try {
+    await pool.query(
+      `
+      DELETE FROM user_sessions
+      WHERE session_id = $1
+      `,
+      [
+        req.user.session_id
+      ]
+    )
+
+    res.json({
+      success: true
+    })
+  } catch (err) {
+    res.json({
+      success: true
+    })
+  }
+})
+
 app.get('/admin/users', auth, adminOnly, async (req, res) => {
   try {
     const result =
       await pool.query(`
         SELECT
-          id,
-          name,
-          email,
-          role,
-          status,
-          plan,
-          max_connections,
-          expires_at,
-          credits,
-          watching,
-          watching_type,
-          watching_updated_at
+          users.id,
+          users.name,
+          users.email,
+          users.role,
+          users.status,
+          users.plan,
+          users.max_connections,
+          users.expires_at,
+          users.credits,
+          users.watching,
+          users.watching_type,
+          users.watching_updated_at,
+          COUNT(user_sessions.id)::INTEGER AS active_connections
         FROM users
-        ORDER BY id DESC
+        LEFT JOIN user_sessions
+          ON user_sessions.user_id = users.id
+        GROUP BY users.id
+        ORDER BY users.id DESC
       `)
 
     res.json(result.rows)
@@ -720,6 +890,23 @@ app.patch('/admin/users/:id', auth, adminOnly, async (req, res) => {
           id
         ]
       )
+
+    await pool.query(
+      `
+      DELETE FROM user_sessions
+      WHERE id IN (
+        SELECT user_sessions.id
+        FROM user_sessions
+        JOIN users ON users.id = user_sessions.user_id
+        WHERE user_sessions.user_id = $1
+        ORDER BY user_sessions.created_at DESC
+        OFFSET GREATEST(1, COALESCE((SELECT max_connections FROM users WHERE id = $1), 1))
+      )
+      `,
+      [
+        id
+      ]
+    )
 
     res.json(result.rows[0])
   } catch (err) {
@@ -937,7 +1124,16 @@ app.get('/me', auth, async (req, res) => {
     const result =
       await pool.query(
         `
-        SELECT *
+        SELECT
+          id,
+          name,
+          email,
+          role,
+          status,
+          plan,
+          max_connections,
+          expires_at,
+          credits
         FROM users
         WHERE id = $1
         LIMIT 1
@@ -951,34 +1147,7 @@ app.get('/me', auth, async (req, res) => {
       })
     }
 
-    const user = result.rows[0]
-
-    if (String(user.status).trim() !== 'active') {
-      return res.status(403).json({
-        error: 'usuario bloqueado'
-      })
-    }
-
-    if (
-      user.expires_at &&
-      new Date(user.expires_at).getTime() < Date.now()
-    ) {
-      return res.status(403).json({
-        error: 'assinatura vencida'
-      })
-    }
-
-    res.json({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      status: user.status,
-      plan: user.plan,
-      max_connections: user.max_connections,
-      expires_at: user.expires_at,
-      credits: user.credits
-    })
+    res.json(result.rows[0])
   } catch (err) {
     console.log(err)
 
@@ -1656,6 +1825,7 @@ app.post('/watching', auth, async (req, res) => {
     })
   }
 })
+
 app.get('/', (req, res) => {
   res.send('IPTV SERVER ONLINE')
 })
