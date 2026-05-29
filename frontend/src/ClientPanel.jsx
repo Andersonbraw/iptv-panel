@@ -166,6 +166,7 @@ function ClientPanel({
   const [selectedEpisodes, setSelectedEpisodes] = useState([])
   const [selectedSeriesTitle, setSelectedSeriesTitle] = useState('')
   const [selectedSeason, setSelectedSeason] = useState('1')
+  const [currentWatching, setCurrentWatching] = useState(null)
 
   const authHeaders = useMemo(() => {
     return {
@@ -285,6 +286,41 @@ function ClientPanel({
   useEffect(() => {
     loadData()
   }, [])
+
+  async function reportWatching(title, type) {
+    const watchingData = {
+      title: title || '',
+      type: type || ''
+    }
+
+    setCurrentWatching(watchingData)
+
+    try {
+      await axios.post(
+        `${API}/watching`,
+        watchingData,
+        authHeaders
+      )
+    } catch (err) {
+      console.log('ERRO WATCHING:', err)
+    }
+  }
+
+  useEffect(() => {
+    if (!currentWatching?.title) return
+
+    const interval = setInterval(() => {
+      axios.post(
+        `${API}/watching`,
+        currentWatching,
+        authHeaders
+      ).catch(err =>
+        console.log('ERRO WATCHING HEARTBEAT:', err)
+      )
+    }, 60000)
+
+    return () => clearInterval(interval)
+  }, [currentWatching, authHeaders])
 
   const filteredChannels =
     useMemo(() => {
@@ -435,21 +471,6 @@ function ClientPanel({
           a.episodeNumber - b.episodeNumber
       )
   }, [selectedEpisodes, selectedSeason])
-
-  async function reportWatching(title, type) {
-    try {
-      await axios.post(
-        `${API}/watching`,
-        {
-          title: title || '',
-          type: type || ''
-        },
-        authHeaders
-      )
-    } catch (err) {
-      console.log('ERRO WATCHING:', err)
-    }
-  }
 
   async function openPlayer(item) {
     const title =
@@ -671,20 +692,9 @@ function ClientPanel({
                           'none'
                       }
                     }}
-                    onClick={() => {
-  setSelectedChannel(channel)
-
-  axios.post(
-    `${API}/watching`,
-    {
-      title: channel.name,
-      type: 'Canal'
-    },
-    authHeaders
-  ).catch(err =>
-    console.log('erro watching', err)
-  )
-}}
+                    onClick={() =>
+                      selectChannel(channel)
+                    }
                   >
                     <img
                       loading='lazy'
