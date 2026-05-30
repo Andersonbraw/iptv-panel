@@ -1,34 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 
-const API =
-  'https://iptv-backend-cuxf.onrender.com'
+const API = 'https://iptv-backend-cuxf.onrender.com'
 
 const PLACEHOLDER =
   'https://upload.wikimedia.org/wikipedia/commons/6/65/No-Image-Placeholder.svg'
 
 function AdminMovies() {
-  const [movies, setMovies] =
-    useState([])
-
-  const [search, setSearch] =
-    useState('')
-
-  const [filter, setFilter] =
-    useState('Todos')
-
-  const [m3uUrl, setM3uUrl] =
-    useState('')
-
-  const [loading, setLoading] =
-    useState(false)
+  const [movies, setMovies] = useState([])
+  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState('Todos')
+  const [m3uUrl, setM3uUrl] = useState('')
+  const [loading, setLoading] = useState(false)
 
   const authHeaders = useMemo(() => {
     return {
       headers: {
-        Authorization: `Bearer ${localStorage.getItem(
-          'token'
-        )}`
+        Authorization: `Bearer ${localStorage.getItem('token')}`
       }
     }
   }, [])
@@ -60,18 +48,12 @@ function AdminMovies() {
     try {
       setLoading(true)
 
-      const res = await axios.get(
-        `${API}/movies`,
-        authHeaders
-      )
+      const res = await axios.get(`${API}/movies`, authHeaders)
 
       setMovies(res.data || [])
     } catch (err) {
       console.log(err)
-
-      alert(
-        'Erro ao carregar filmes'
-      )
+      alert(err.response?.data?.error || 'Erro ao carregar filmes')
     } finally {
       setLoading(false)
     }
@@ -95,68 +77,48 @@ function AdminMovies() {
         authHeaders
       )
 
-      alert(
-        `Importados: ${res.data.added || 0}`
-      )
+      alert(`Importados: ${res.data.added || 0}`)
 
       setM3uUrl('')
-
       await loadMovies()
     } catch (err) {
-      alert(
-        err.response?.data
-          ?.error ||
-          'Erro ao importar filmes'
-      )
+      console.log(err)
+      alert(err.response?.data?.error || 'Erro ao importar filmes')
     } finally {
       setLoading(false)
     }
   }
 
   async function removeMovie(id) {
-    const confirmDelete = confirm(
-      'Remover item?'
-    )
+    const confirmDelete = confirm('Remover item?')
 
     if (!confirmDelete) return
 
     try {
-      await axios.delete(
-        `${API}/movies/${id}`,
-        authHeaders
-      )
+      await axios.delete(`${API}/movies/${id}`, authHeaders)
 
-      setMovies(prev =>
-        prev.filter(
-          movie =>
-            movie.id !== id
-        )
-      )
-    } catch {
-      alert('Erro ao remover')
+      setMovies(prev => prev.filter(movie => movie.id !== id))
+    } catch (err) {
+      console.log(err)
+      alert(err.response?.data?.error || 'Erro ao remover')
     }
   }
 
   async function clearAllMovies() {
-    const confirmDelete = confirm(
-      'APAGAR TODOS OS FILMES E SÉRIES?'
-    )
+    const confirmDelete = confirm('APAGAR TODOS OS FILMES E SÉRIES?')
 
     if (!confirmDelete) return
 
     try {
       setLoading(true)
 
-      await axios.delete(
-        `${API}/movies-clear`,
-        authHeaders
-      )
+      await axios.delete(`${API}/movies-clear`, authHeaders)
 
       alert('Tudo removido')
-
       setMovies([])
-    } catch {
-      alert('Erro ao limpar')
+    } catch (err) {
+      console.log(err)
+      alert(err.response?.data?.error || 'Erro ao limpar tudo')
     } finally {
       setLoading(false)
     }
@@ -164,7 +126,7 @@ function AdminMovies() {
 
   async function removeBadMovies() {
     const confirmDelete = confirm(
-      'Remover conteúdos IPTV misturados?'
+      'Remover conteúdos IPTV misturados, adultos, duplicados e inválidos?'
     )
 
     if (!confirmDelete) return
@@ -172,80 +134,17 @@ function AdminMovies() {
     try {
       setLoading(true)
 
-      const badWords = [
-        'reuters',
-        'trace',
-        'pluto',
-        'channel',
-        'tv',
-        'news',
-        'live',
-        'ao vivo',
-        'radio',
-        'music',
-        'cnn',
-        'bbc',
-        'fox',
-        'sport',
-        'sports',
-        'futebol',
-        'espn',
-        'premiere',
-        'combate',
-        'sbt',
-        'record',
-        'band',
-        'redetv',
-        'sky',
-        'playlist',
-        'm3u',
-        'nba',
-        'nfl',
-        'ufc',
-        'cartoon',
-        'nick',
-        'mtv',
-        'animal planet',
-        'discovery channel',
-        'nat geo'
-      ]
-
-      const toRemove =
-        movies.filter(movie => {
-          const text = normalize(`
-            ${movie.title || ''}
-            ${movie.name || ''}
-            ${movie.category || ''}
-          `)
-
-          return badWords.some(
-            word =>
-              text.includes(
-                normalize(word)
-              )
-          )
-        })
-
-      await Promise.all(
-        toRemove.map(movie =>
-          axios.delete(
-            `${API}/movies/${movie.id}`,
-            authHeaders
-          )
-        )
+      const res = await axios.delete(
+        `${API}/movies/clean-bad`,
+        authHeaders
       )
 
-      alert(
-        `Removidos: ${toRemove.length}`
-      )
+      alert(`Removidos: ${res.data.removed || 0}`)
 
       await loadMovies()
     } catch (err) {
-      alert(
-        err.response?.data
-          ?.error ||
-          'Erro ao limpar'
-      )
+      console.log(err)
+      alert(err.response?.data?.error || 'Erro ao limpar IPTV')
     } finally {
       setLoading(false)
     }
@@ -255,94 +154,48 @@ function AdminMovies() {
     loadMovies()
   }, [])
 
-  const filteredMovies =
-    useMemo(() => {
-      const grouped = {}
+  const filteredMovies = useMemo(() => {
+    const grouped = {}
 
-      movies.forEach(movie => {
-        const originalTitle =
-          movie.title || ''
+    movies.forEach(movie => {
+      const originalTitle = movie.title || ''
+      const cleanTitle = cleanGroupTitle(originalTitle)
+      const normalizedTitle = normalize(cleanTitle || originalTitle)
+      const category = normalize(movie.category || '')
 
-        const cleanTitle =
-          cleanGroupTitle(
-            originalTitle
-          )
+      const matchesSearch =
+        normalizedTitle.includes(normalize(search)) ||
+        normalize(originalTitle).includes(normalize(search))
 
-        const normalizedTitle =
-          normalize(
-            cleanTitle ||
-              originalTitle
-          )
+      const matchesFilter =
+        filter === 'Todos'
+          ? true
+          : category.includes(normalize(filter))
 
-        const category =
-          normalize(
-            movie.category || ''
-          )
+      if (!matchesSearch || !matchesFilter) return
 
-        const matchesSearch =
-          normalizedTitle.includes(
-            normalize(search)
-          ) ||
-          normalize(
-            originalTitle
-          ).includes(
-            normalize(search)
-          )
-
-        const matchesFilter =
-          filter === 'Todos'
-            ? true
-            : category.includes(
-                normalize(filter)
-              )
-
-        if (
-          !matchesSearch ||
-          !matchesFilter
-        ) {
-          return
+      if (!grouped[normalizedTitle]) {
+        grouped[normalizedTitle] = {
+          ...movie,
+          title: cleanTitle || originalTitle,
+          episodes: 1,
+          ids: [movie.id]
         }
+      } else {
+        grouped[normalizedTitle].episodes++
+        grouped[normalizedTitle].ids.push(movie.id)
+      }
+    })
 
-        if (
-          !grouped[
-            normalizedTitle
-          ]
-        ) {
-          grouped[
-            normalizedTitle
-          ] = {
-            ...movie,
-            title:
-              cleanTitle ||
-              originalTitle,
-            episodes: 1,
-            ids: [movie.id]
-          }
-        } else {
-          grouped[
-            normalizedTitle
-          ].episodes++
-
-          grouped[
-            normalizedTitle
-          ].ids.push(movie.id)
-        }
-      })
-
-      return Object.values(grouped)
-    }, [movies, search, filter])
+    return Object.values(grouped)
+  }, [movies, search, filter])
 
   return (
     <div>
       <div style={styles.top}>
         <div>
-          <h1 style={styles.title}>
-            Filmes e Séries
-          </h1>
-
-          <p style={styles.subtitle}>
-            Gerencie conteúdos VOD
-          </p>
+          <h1 style={styles.title}>Filmes e Séries</h1>
+          <p style={styles.subtitle}>Gerencie conteúdos VOD</p>
         </div>
       </div>
 
@@ -350,27 +203,15 @@ function AdminMovies() {
         <input
           placeholder='Cole URL M3U Filmes/Séries...'
           value={m3uUrl}
-          onChange={e =>
-            setM3uUrl(
-              e.target.value
-            )
-          }
+          onChange={e => setM3uUrl(e.target.value)}
           style={styles.importInput}
         />
 
-        <button
-          style={styles.importButton}
-          onClick={
-            importMoviesM3U
-          }
-        >
+        <button style={styles.importButton} onClick={importMoviesM3U}>
           Importar M3U
         </button>
 
-        <button
-          style={styles.updateButton}
-          onClick={loadMovies}
-        >
+        <button style={styles.updateButton} onClick={loadMovies}>
           Atualizar
         </button>
       </div>
@@ -379,166 +220,73 @@ function AdminMovies() {
         <input
           placeholder='Buscar...'
           value={search}
-          onChange={e =>
-            setSearch(
-              e.target.value
-            )
-          }
+          onChange={e => setSearch(e.target.value)}
           style={styles.searchInput}
         />
 
         <select
           value={filter}
-          onChange={e =>
-            setFilter(
-              e.target.value
-            )
-          }
+          onChange={e => setFilter(e.target.value)}
           style={styles.select}
         >
-          <option>
-            Todos
-          </option>
-
-          <option>
-            Filmes
-          </option>
-
-          <option>
-            Series
-          </option>
+          <option>Todos</option>
+          <option>Filmes</option>
+          <option>Series</option>
         </select>
 
-        <button
-          style={
-            styles.cleanButton
-          }
-          onClick={
-            removeBadMovies
-          }
-        >
+        <button style={styles.cleanButton} onClick={removeBadMovies}>
           Limpar IPTV
         </button>
 
-        <button
-          style={
-            styles.clearButton
-          }
-          onClick={
-            clearAllMovies
-          }
-        >
+        <button style={styles.clearButton} onClick={clearAllMovies}>
           Limpar tudo
         </button>
       </div>
 
-      {loading && (
-        <div style={styles.loading}>
-          Processando...
-        </div>
-      )}
+      {loading && <div style={styles.loading}>Processando...</div>}
 
       <div style={styles.totalBox}>
-        Total agrupado:{' '}
-        {
-          filteredMovies.length
-        }{' '}
-        | Itens reais:{' '}
-        {
-          movies.length
-        }
+        Total agrupado: {filteredMovies.length} | Itens reais: {movies.length}
       </div>
 
       <div style={styles.grid}>
-        {filteredMovies.map(
-          movie => (
-            <div
-              key={movie.id}
-              style={styles.card}
-            >
-              {movie.episodes > 1 && (
-                <div style={styles.episodeBadge}>
-                  {movie.episodes} episódios
-                </div>
-              )}
-
-              <img
-                loading='lazy'
-                src={
-                  movie.image?.startsWith(
-                    'http'
-                  )
-                    ? movie.image
-                    : PLACEHOLDER
-                }
-                alt={
-                  movie.title
-                }
-                style={
-                  styles.poster
-                }
-                onError={e => {
-                  e.currentTarget.src =
-                    PLACEHOLDER
-                }}
-              />
-
-              <div
-                style={
-                  styles.overlay
-                }
-              >
-                <div>
-                  <h3
-                    style={
-                      styles.movieTitle
-                    }
-                  >
-                    {
-                      movie.title
-                    }
-                  </h3>
-
-                  <p
-                    style={
-                      styles.movieInfo
-                    }
-                  >
-                    {movie.year ||
-                      'VOD'}{' '}
-                    •{' '}
-                    {movie.category ||
-                      'Filmes'}
-
-                    {movie.episodes >
-                      1 && (
-                      <>
-                        {' '}
-                        •{' '}
-                        {
-                          movie.episodes
-                        } episódios
-                      </>
-                    )}
-                  </p>
-                </div>
-
-                <button
-                  style={
-                    styles.deleteButton
-                  }
-                  onClick={() =>
-                    removeMovie(
-                      movie.id
-                    )
-                  }
-                >
-                  Remover
-                </button>
+        {filteredMovies.map(movie => (
+          <div key={movie.id} style={styles.card}>
+            {movie.episodes > 1 && (
+              <div style={styles.episodeBadge}>
+                {movie.episodes} episódios
               </div>
+            )}
+
+            <img
+              loading='lazy'
+              src={movie.image?.startsWith('http') ? movie.image : PLACEHOLDER}
+              alt={movie.title}
+              style={styles.poster}
+              onError={e => {
+                e.currentTarget.src = PLACEHOLDER
+              }}
+            />
+
+            <div style={styles.overlay}>
+              <div>
+                <h3 style={styles.movieTitle}>{movie.title}</h3>
+
+                <p style={styles.movieInfo}>
+                  {movie.year || 'VOD'} • {movie.category || 'Filmes'}
+                  {movie.episodes > 1 && <> • {movie.episodes} episódios</>}
+                </p>
+              </div>
+
+              <button
+                style={styles.deleteButton}
+                onClick={() => removeMovie(movie.id)}
+              >
+                Remover
+              </button>
             </div>
-          )
-        )}
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -560,8 +308,7 @@ const styles = {
 
   importBox: {
     display: 'grid',
-    gridTemplateColumns:
-      '2fr 180px 180px',
+    gridTemplateColumns: '2fr 180px 180px',
     gap: 12,
     marginBottom: 20
   },
@@ -577,8 +324,7 @@ const styles = {
   importButton: {
     border: 'none',
     borderRadius: 14,
-    background:
-      'linear-gradient(90deg,#38bdf8,#0ea5e9)',
+    background: 'linear-gradient(90deg,#38bdf8,#0ea5e9)',
     color: '#000',
     fontWeight: 'bold',
     cursor: 'pointer'
@@ -587,8 +333,7 @@ const styles = {
   updateButton: {
     border: 'none',
     borderRadius: 14,
-    background:
-      'linear-gradient(90deg,#38bdf8,#0ea5e9)',
+    background: 'linear-gradient(90deg,#38bdf8,#0ea5e9)',
     color: '#000',
     fontWeight: 'bold',
     cursor: 'pointer'
@@ -596,8 +341,7 @@ const styles = {
 
   topActions: {
     display: 'grid',
-    gridTemplateColumns:
-      '2fr 1fr 1fr 1fr',
+    gridTemplateColumns: '2fr 1fr 1fr 1fr',
     gap: 12,
     marginBottom: 20
   },
@@ -621,8 +365,7 @@ const styles = {
   cleanButton: {
     border: 'none',
     borderRadius: 14,
-    background:
-      'linear-gradient(90deg,#f59e0b,#d97706)',
+    background: 'linear-gradient(90deg,#f59e0b,#d97706)',
     color: '#000',
     fontWeight: 'bold',
     cursor: 'pointer'
@@ -631,8 +374,7 @@ const styles = {
   clearButton: {
     border: 'none',
     borderRadius: 14,
-    background:
-      'linear-gradient(90deg,#ef4444,#dc2626)',
+    background: 'linear-gradient(90deg,#ef4444,#dc2626)',
     color: '#fff',
     fontWeight: 'bold',
     cursor: 'pointer'
@@ -640,8 +382,7 @@ const styles = {
 
   loading: {
     background: '#020617',
-    border:
-      '1px solid #12345f',
+    border: '1px solid #12345f',
     padding: 14,
     borderRadius: 14,
     marginBottom: 20,
@@ -651,8 +392,7 @@ const styles = {
 
   totalBox: {
     background: '#020617',
-    border:
-      '1px solid #12345f',
+    border: '1px solid #12345f',
     padding: 14,
     borderRadius: 14,
     marginBottom: 20,
@@ -662,8 +402,7 @@ const styles = {
 
   grid: {
     display: 'grid',
-    gridTemplateColumns:
-      'repeat(auto-fill,minmax(165px,1fr))',
+    gridTemplateColumns: 'repeat(auto-fill,minmax(165px,1fr))',
     gap: 14
   },
 
@@ -672,8 +411,7 @@ const styles = {
     borderRadius: 18,
     overflow: 'hidden',
     background: '#020617',
-    border:
-      '1px solid rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.05)',
     transition: '0.25s',
     cursor: 'pointer'
   },
@@ -683,8 +421,7 @@ const styles = {
     top: 8,
     right: 8,
     zIndex: 4,
-    background:
-      'linear-gradient(90deg,#38bdf8,#0ea5e9)',
+    background: 'linear-gradient(90deg,#38bdf8,#0ea5e9)',
     color: '#000',
     padding: '5px 8px',
     borderRadius: 999,
@@ -703,8 +440,7 @@ const styles = {
   overlay: {
     position: 'absolute',
     inset: 0,
-    background:
-      'linear-gradient(to top,rgba(0,0,0,0.95),rgba(0,0,0,0.15))',
+    background: 'linear-gradient(to top,rgba(0,0,0,0.95),rgba(0,0,0,0.15))',
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'flex-end',
@@ -730,8 +466,7 @@ const styles = {
     padding: 9,
     border: 'none',
     borderRadius: 10,
-    background:
-      'linear-gradient(90deg,#ef4444,#dc2626)',
+    background: 'linear-gradient(90deg,#ef4444,#dc2626)',
     color: '#fff',
     fontWeight: 'bold',
     cursor: 'pointer',
