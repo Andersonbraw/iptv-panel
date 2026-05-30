@@ -308,6 +308,13 @@ function normalizeGithubUrl(url) {
   return url
 }
 
+function normalizeText(value = '') {
+  return String(value)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+}
+
 async function fetchM3UText(playlistUrl) {
   const fixedUrl =
     normalizeGithubUrl(playlistUrl)
@@ -478,16 +485,19 @@ function cleanTitle(title = '') {
 
 function isBadMovieItem(movie) {
   const title =
-    (movie.title || '').toLowerCase()
+    normalizeText(movie.title || '')
 
   const category =
-    (movie.category || '').toLowerCase()
+    normalizeText(movie.category || '')
 
   const image =
-    (movie.image || '').toLowerCase()
+    normalizeText(movie.image || '')
 
   const video =
-    (movie.video || '').toLowerCase()
+    normalizeText(movie.video || '')
+
+  const rawTitle =
+    String(movie.title || '').trim()
 
   const badWords = [
     'tv',
@@ -526,9 +536,32 @@ function isBadMovieItem(movie) {
     'backup',
     'camera',
     'webcam',
+    'web cam',
+    'cam girl',
+    'camgirl',
+    'camtv',
+    'mycamtv',
     'xxx',
     'adult',
-    'porn'
+    'adults',
+    'porn',
+    'porno',
+    'sexo',
+    'sex',
+    'sexy',
+    'hot',
+    'nude',
+    'naked',
+    'onlyfans',
+    'fansly',
+    'bonga',
+    'livejasmin',
+    'strip',
+    'escort',
+    'model',
+    'webmodel',
+    'private',
+    'erotic'
   ]
 
   const blockedWords = [
@@ -570,6 +603,33 @@ function isBadMovieItem(movie) {
     'madinah'
   ]
 
+  const adultNames = [
+    'erin',
+    'nessa',
+    'imeliana',
+    'marina',
+    'aoki',
+    'danna',
+    'gingercherry',
+    'grace',
+    'holly',
+    'jade',
+    'jessy',
+    'katrinka',
+    'lovely',
+    'luna',
+    'hinata',
+    'scarlet',
+    'sweetness',
+    'taylorblack',
+    'valery',
+    'yomoy',
+    'baramurava',
+    'karolina',
+    'lana',
+    'locomoco'
+  ]
+
   const badExact =
     title === 'vo' ||
     title === 'vod' ||
@@ -589,6 +649,17 @@ function isBadMovieItem(movie) {
       title.includes(word)
     )
 
+  const badAdultName =
+    adultNames.some(word =>
+      title.includes(word)
+    )
+
+  const badUsernameTitle =
+    rawTitle.startsWith('_') ||
+    rawTitle.endsWith('_') ||
+    rawTitle.includes('__') ||
+    /^[_a-z0-9.-]{3,30}$/i.test(rawTitle)
+
   const badImage =
     !image ||
     image.includes('ui-avatars') ||
@@ -601,17 +672,35 @@ function isBadMovieItem(movie) {
     category.includes('sports') ||
     category.includes('radio') ||
     category.includes('music') ||
-    category.includes('live')
+    category.includes('live') ||
+    category.includes('adult') ||
+    category.includes('xxx') ||
+    category.includes('porn') ||
+    category.includes('webcam') ||
+    category.includes('cam')
 
   const badVideo =
     !video ||
     video.includes('udp://') ||
-    video.includes('rtmp://')
+    video.includes('rtmp://') ||
+    video.includes('xxx') ||
+    video.includes('adult') ||
+    video.includes('porn') ||
+    video.includes('webcam') ||
+    video.includes('cam') ||
+    video.includes('mycamtv') ||
+    video.includes('camtv') ||
+    video.includes('onlyfans') ||
+    video.includes('fansly') ||
+    video.includes('bonga') ||
+    video.includes('livejasmin')
 
   return (
     badExact ||
     badTitle ||
     blockedLanguage ||
+    badAdultName ||
+    badUsernameTitle ||
     badImage ||
     badCategory ||
     badVideo
@@ -1385,19 +1474,11 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
     let added = 0
     let skipped = 0
 
-    function normalizeText(value = '') {
-      return String(value)
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-    }
-
     function isVideoUrl(streamUrl = '') {
-      const url = streamUrl.toLowerCase()
+      const url = normalizeText(streamUrl)
 
       return (
         url.includes('.mp4') ||
-        url.includes('.XXX VOD') ||
         url.includes('.mkv') ||
         url.includes('.avi') ||
         url.includes('.mov') ||
@@ -1408,18 +1489,81 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
       )
     }
 
-    function isBlocked(title = '', group = '', streamUrl = '') {
-      const text = normalizeText(`${title} ${group} ${streamUrl}`)
+    function isBlocked(title = '', group = '', streamUrl = '', logo = '') {
+      const text = normalizeText(`${title} ${group} ${streamUrl} ${logo}`)
+      const rawTitle = String(title || '').trim()
 
       const blockedWords = [
+        'xxx',
+        'adult',
+        'adults',
+        'porn',
+        'porno',
+        'sexo',
+        'sex',
+        'sexy',
+        'hot',
+        'nude',
+        'naked',
         'camera',
         'webcam',
+        'web cam',
+        'camgirl',
+        'cam girl',
+        'camtv',
+        'mycamtv',
+        'onlyfans',
+        'fansly',
+        'bonga',
+        'livejasmin',
+        'strip',
+        'escort',
+        'model',
+        'webmodel',
+        'erotic',
         'radio',
         'udp://',
         'rtmp://'
       ]
 
-      return blockedWords.some(word => text.includes(word))
+      const adultNames = [
+        'erin',
+        'nessa',
+        'imeliana',
+        'marina',
+        'aoki',
+        'danna',
+        'gingercherry',
+        'grace',
+        'holly',
+        'jade',
+        'jessy',
+        'katrinka',
+        'lovely',
+        'luna',
+        'hinata',
+        'scarlet',
+        'sweetness',
+        'taylorblack',
+        'valery',
+        'yomoy',
+        'baramurava',
+        'karolina',
+        'lana',
+        'locomoco'
+      ]
+
+      const badUsernameTitle =
+        rawTitle.startsWith('_') ||
+        rawTitle.endsWith('_') ||
+        rawTitle.includes('__') ||
+        /^[_a-z0-9.-]{3,30}$/i.test(rawTitle)
+
+      return (
+        blockedWords.some(word => text.includes(word)) ||
+        adultNames.some(word => text.includes(word)) ||
+        badUsernameTitle
+      )
     }
 
     function looksLikeSeries(title = '', group = '', streamUrl = '') {
@@ -1451,6 +1595,7 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
 
         current = {
           title: title || rawTitle || 'VOD',
+          rawTitle,
           group: groupMatch ? groupMatch[1].trim() : '',
           logo: logoMatch ? logoMatch[1].trim() : ''
         }
@@ -1468,7 +1613,14 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
             continue
           }
 
-          if (isBlocked(current.title, current.group, streamUrl)) {
+          if (
+            isBlocked(
+              current.rawTitle || current.title,
+              current.group,
+              streamUrl,
+              current.logo
+            )
+          ) {
             skipped++
             current = null
             continue
@@ -1559,52 +1711,131 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
 
 app.delete('/movies/clean-bad', auth, adminOnly, async (req, res) => {
   try {
-    const result =
+    const beforeResult =
       await pool.query(`
-        SELECT *
+        SELECT COUNT(*)::INTEGER AS total
         FROM movies
-        ORDER BY id ASC
       `)
 
-    const movies = result.rows
-    const idsToDelete = []
-    const seenTitles = new Set()
-
-    for (const movie of movies) {
-      const titleKey =
-        (movie.title || '')
-          .toLowerCase()
-          .trim()
-
-      const isDuplicate =
-        seenTitles.has(titleKey)
-
-      if (titleKey) {
-        seenTitles.add(titleKey)
-      }
-
-      if (
-        isDuplicate ||
-        isBadMovieItem(movie)
-      ) {
-        idsToDelete.push(movie.id)
-      }
-    }
-
-    if (idsToDelete.length > 0) {
-      await pool.query(
-        `
+    const duplicateResult =
+      await pool.query(`
         DELETE FROM movies
-        WHERE id = ANY($1::int[])
-        `,
-        [idsToDelete]
-      )
-    }
+        WHERE id IN (
+          SELECT id
+          FROM (
+            SELECT
+              id,
+              ROW_NUMBER() OVER (
+                PARTITION BY LOWER(TRIM(title))
+                ORDER BY id ASC
+              ) AS rn
+            FROM movies
+          ) duplicated
+          WHERE duplicated.rn > 1
+        )
+        RETURNING id
+      `)
+
+    const badResult =
+      await pool.query(`
+        DELETE FROM movies
+        WHERE
+          title IS NULL
+          OR TRIM(title) = ''
+          OR video IS NULL
+          OR TRIM(video) = ''
+          OR image IS NULL
+          OR TRIM(image) = ''
+          OR LOWER(title) IN ('vo','vod','tv','hd','fhd','4k')
+          OR LENGTH(TRIM(title)) <= 2
+          OR LOWER(title) LIKE '%xxx%'
+          OR LOWER(title) LIKE '%adult%'
+          OR LOWER(title) LIKE '%porn%'
+          OR LOWER(title) LIKE '%porno%'
+          OR LOWER(title) LIKE '%sexo%'
+          OR LOWER(title) LIKE '%sexy%'
+          OR LOWER(title) LIKE '%nude%'
+          OR LOWER(title) LIKE '%naked%'
+          OR LOWER(title) LIKE '%webcam%'
+          OR LOWER(title) LIKE '%web cam%'
+          OR LOWER(title) LIKE '%camgirl%'
+          OR LOWER(title) LIKE '%cam girl%'
+          OR LOWER(title) LIKE '%camtv%'
+          OR LOWER(title) LIKE '%mycamtv%'
+          OR LOWER(title) LIKE '%onlyfans%'
+          OR LOWER(title) LIKE '%fansly%'
+          OR LOWER(title) LIKE '%bonga%'
+          OR LOWER(title) LIKE '%livejasmin%'
+          OR LOWER(title) LIKE '%strip%'
+          OR LOWER(title) LIKE '%escort%'
+          OR LOWER(title) LIKE '%webmodel%'
+          OR LOWER(title) LIKE '%erotic%'
+          OR LOWER(title) LIKE '%erin%'
+          OR LOWER(title) LIKE '%nessa%'
+          OR LOWER(title) LIKE '%imeliana%'
+          OR LOWER(title) LIKE '%marina%'
+          OR LOWER(title) LIKE '%aoki%'
+          OR LOWER(title) LIKE '%danna%'
+          OR LOWER(title) LIKE '%gingercherry%'
+          OR LOWER(title) LIKE '%holly%'
+          OR LOWER(title) LIKE '%hinata%'
+          OR LOWER(title) LIKE '%scarlet%'
+          OR LOWER(title) LIKE '%sweetness%'
+          OR LOWER(title) LIKE '%taylorblack%'
+          OR LOWER(title) LIKE '%valery%'
+          OR LOWER(title) LIKE '%yomoy%'
+          OR LOWER(title) LIKE '%karolina%'
+          OR LOWER(title) LIKE '%lana%'
+          OR LOWER(title) LIKE '%locomoco%'
+          OR title LIKE '\\_%' ESCAPE '\\'
+          OR title LIKE '%\\_' ESCAPE '\\'
+          OR title LIKE '%__%'
+          OR LOWER(category) LIKE '%adult%'
+          OR LOWER(category) LIKE '%xxx%'
+          OR LOWER(category) LIKE '%porn%'
+          OR LOWER(category) LIKE '%webcam%'
+          OR LOWER(category) LIKE '%cam%'
+          OR LOWER(category) LIKE '%radio%'
+          OR LOWER(category) LIKE '%news%'
+          OR LOWER(category) LIKE '%sports%'
+          OR LOWER(category) LIKE '%music%'
+          OR LOWER(category) LIKE '%live%'
+          OR LOWER(video) LIKE '%xxx%'
+          OR LOWER(video) LIKE '%adult%'
+          OR LOWER(video) LIKE '%porn%'
+          OR LOWER(video) LIKE '%webcam%'
+          OR LOWER(video) LIKE '%camtv%'
+          OR LOWER(video) LIKE '%mycamtv%'
+          OR LOWER(video) LIKE '%onlyfans%'
+          OR LOWER(video) LIKE '%fansly%'
+          OR LOWER(video) LIKE '%bonga%'
+          OR LOWER(video) LIKE '%livejasmin%'
+          OR LOWER(video) LIKE '%udp://%'
+          OR LOWER(video) LIKE '%rtmp://%'
+          OR LOWER(image) LIKE '%placeholder%'
+          OR LOWER(image) LIKE '%no-image%'
+          OR LOWER(image) LIKE '%undefined%'
+          OR LOWER(image) LIKE '%ui-avatars%'
+        RETURNING id
+      `)
+
+    const afterResult =
+      await pool.query(`
+        SELECT COUNT(*)::INTEGER AS total
+        FROM movies
+      `)
+
+    const removedDuplicates = duplicateResult.rowCount || 0
+    const removedBad = badResult.rowCount || 0
+    const removed = removedDuplicates + removedBad
 
     res.json({
       success: true,
-      removed: idsToDelete.length,
-      total: movies.length
+      removed,
+      removedDuplicates,
+      removedBad,
+      totalBefore: beforeResult.rows[0]?.total || 0,
+      totalAfter: afterResult.rows[0]?.total || 0
     })
   } catch (err) {
     console.log('ERRO CLEAN BAD:', err)
