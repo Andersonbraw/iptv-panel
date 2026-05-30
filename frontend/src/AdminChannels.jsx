@@ -254,85 +254,117 @@ function AdminChannels() {
   }
 
   async function removeForeignChannels() {
-    const blocked = [
-      'arab',
-      'urdu',
-      'india',
-      'pakistan',
-      'turk',
-      'persian',
-      'bangla',
-      'africa',
-      'islam',
-      'quran',
-      'muslim',
-      'hindi',
-      'tamil',
-      'telugu',
-      'aljazeera',
-      'france',
-      'russia',
-      'russian'
-    ]
+  const blocked = [
+    'arab',
+    'urdu',
+    'india',
+    'pakistan',
+    'turk',
+    'persian',
+    'bangla',
+    'africa',
+    'islam',
+    'quran',
+    'muslim',
+    'hindi',
+    'tamil',
+    'telugu',
+    'aljazeera',
+    'france',
+    'russia',
+    'russian',
 
-    const foreign =
-      channels.filter(
-        channel => {
-          const name =
-            normalize(
-              channel.name
-            )
+    'xxx',
+    'adult',
+    'porn',
+    'porno',
+    'sexo',
+    'sex',
+    'webcam',
+    'camgirl',
+    'cam',
+    'camtv',
+    'mycamtv',
+    'onlyfans',
+    'fansly',
+    'bonga',
+    'livejasmin',
 
-          return blocked.some(
-            word =>
-              name.includes(
-                word
-              )
-          )
-        }
-      )
+    'erin',
+    'nessa',
+    'imeliana',
+    'marina',
+    'aoki',
+    'danna',
+    'gingercherry',
+    'grace',
+    'holly',
+    'jade',
+    'jessy',
+    'katrinka',
+    'lovely',
+    'luna',
+    'hinata',
+    'scarlet',
+    'sweetness',
+    'taylorblack',
+    'valery',
+    'yomoy',
+    'karolina',
+    'lana',
+    'locomoco'
+  ]
 
-    if (
-      foreign.length === 0
-    ) {
-      alert(
-        'Nenhum canal estrangeiro encontrado'
-      )
-      return
-    }
+  const foreign = channels.filter(channel => {
+    const name = normalize(channel.name || '')
+    const rawName = String(channel.name || '').trim()
 
-    if (
-      !confirm(
-        `Remover ${foreign.length} canais estrangeiros?`
-      )
+    const suspiciousName =
+      rawName.startsWith('_') ||
+      rawName.endsWith('_') ||
+      rawName.includes('__') ||
+      /^[_a-z0-9.-]{3,30}$/i.test(rawName)
+
+    return (
+      blocked.some(word => name.includes(word)) ||
+      suspiciousName
     )
-      return
+  })
 
-    try {
-      setLoading(true)
+  if (foreign.length === 0) {
+    alert('Nenhum canal suspeito encontrado')
+    return
+  }
 
-      await Promise.all(
-        foreign.map(c =>
-          axios.delete(
-            `${API}/channels/${c.id}`,
-            authHeaders
-          )
+  if (
+    !confirm(
+      `Remover ${foreign.length} canais suspeitos/adultos?`
+    )
+  )
+    return
+
+  try {
+    setLoading(true)
+
+    await Promise.all(
+      foreign.map(c =>
+        axios.delete(
+          `${API}/channels/${c.id}`,
+          authHeaders
         )
       )
+    )
 
-      alert(
-        `${foreign.length} canais removidos`
-      )
+    alert(`${foreign.length} canais removidos`)
 
-      await loadChannels()
-    } catch {
-      alert(
-        'Erro ao remover estrangeiros'
-      )
-    } finally {
-      setLoading(false)
-    }
+    await loadChannels()
+  } catch (err) {
+    console.log(err)
+    alert('Erro ao remover canais')
+  } finally {
+    setLoading(false)
   }
+}
 
   async function removeAllChannels() {
     if (
