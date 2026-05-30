@@ -1308,6 +1308,59 @@ app.post('/channels', auth, async (req, res) => {
   }
 })
 
+app.delete('/channels/clean-bad', auth, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      DELETE FROM channels
+      WHERE
+        LOWER(name) LIKE '%xxx%'
+        OR LOWER(name) LIKE '%adult%'
+        OR LOWER(name) LIKE '%porn%'
+        OR LOWER(name) LIKE '%porno%'
+        OR LOWER(name) LIKE '%sexo%'
+        OR LOWER(name) LIKE '%webcam%'
+        OR LOWER(name) LIKE '%camgirl%'
+        OR LOWER(name) LIKE '%camtv%'
+        OR LOWER(name) LIKE '%mycamtv%'
+        OR LOWER(name) LIKE '%onlyfans%'
+        OR LOWER(name) LIKE '%fansly%'
+        OR LOWER(name) LIKE '%bonga%'
+        OR LOWER(name) LIKE '%livejasmin%'
+        OR LOWER(name) LIKE '%erin%'
+        OR LOWER(name) LIKE '%nessa%'
+        OR LOWER(name) LIKE '%imeliana%'
+        OR LOWER(name) LIKE '%marina%'
+        OR LOWER(name) LIKE '%aoki%'
+        OR LOWER(name) LIKE '%danna%'
+        OR LOWER(name) LIKE '%gingercherry%'
+        OR LOWER(name) LIKE '%holly%'
+        OR LOWER(name) LIKE '%hinata%'
+        OR LOWER(name) LIKE '%scarlet%'
+        OR LOWER(name) LIKE '%sweetness%'
+        OR LOWER(name) LIKE '%taylorblack%'
+        OR LOWER(name) LIKE '%valery%'
+        OR LOWER(name) LIKE '%yomoy%'
+        OR LOWER(name) LIKE '%karolina%'
+        OR LOWER(name) LIKE '%lana%'
+        OR LOWER(name) LIKE '%locomoco%'
+        OR name LIKE '\\_%' ESCAPE '\\'
+        OR name LIKE '%\\_' ESCAPE '\\'
+        OR name LIKE '%__%'
+      RETURNING id
+    `)
+
+    res.json({
+      success: true,
+      removed: result.rowCount || 0
+    })
+  } catch (err) {
+    console.log('ERRO CLEAN CHANNELS:', err)
+
+    res.status(500).json({
+      error: 'erro ao limpar canais suspeitos'
+    })
+  }
+})
 app.delete('/channels/:id', auth, async (req, res) => {
   try {
     await pool.query(
