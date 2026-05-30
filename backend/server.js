@@ -1413,11 +1413,6 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
       const text = normalizeText(`${title} ${group} ${streamUrl}`)
 
       const blockedWords = [
-        'xxx',
-        'adult',
-        'porn',
-        'sexo',
-        'sex',
         'camera',
         'webcam',
         'radio',
