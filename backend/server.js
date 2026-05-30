@@ -1397,6 +1397,8 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
 
       return (
         url.includes('.mp4') ||
+        url.includes('.XXX') ||
+        url.includes('.805108') ||
         url.includes('.mkv') ||
         url.includes('.avi') ||
         url.includes('.mov') ||
