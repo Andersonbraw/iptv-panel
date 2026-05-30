@@ -1368,10 +1368,7 @@ app.post('/movies', auth, adminOnly, async (req, res) => {
 
 app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
   try {
-    const {
-      url,
-      type
-    } = req.body
+    const { url, type } = req.body
 
     if (!url) {
       return res.status(400).json({
@@ -1379,241 +1376,135 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
       })
     }
 
-    const targetType =
-      type === 'Series'
-        ? 'Series'
-        : 'Filmes'
+    const targetType = type === 'Series' ? 'Series' : 'Filmes'
 
-    const text =
-      await fetchM3UText(url)
-
-    const lines =
-      text.split('\n')
+    const text = await fetchM3UText(url)
+    const lines = text.split('\n')
 
     let current = null
     let added = 0
     let skipped = 0
 
-    function normalizeText(text = '') {
-      return text
+    function normalizeText(value = '') {
+      return String(value)
         .toLowerCase()
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
     }
 
-    function isLiveItem(title = '', group = '', streamUrl = '') {
-      const text = normalizeText(`
-        ${title}
-        ${group}
-        ${streamUrl}
-      `)
-
-      const liveWords = [
-        'ao vivo',
-        'live',
-        'canais',
-        'canal',
-        'tv',
-        'esportes',
-        'sport',
-        'sports',
-        'premiere',
-        'combate',
-        'espn',
-        'sportv',
-        'noticias',
-        'news',
-        'jornal',
-        'globo',
-        'record',
-        'sbt',
-        'band',
-        'redetv',
-        'cnn',
-        'radio',
-        'music',
-        'musica',
-        'documentarios',
-        'discovery',
-        'history'
-      ]
+    function isVideoUrl(streamUrl = '') {
+      const url = streamUrl.toLowerCase()
 
       return (
-        text.includes('/live/') ||
-        text.includes('/canais/') ||
-        liveWords.some(word =>
-          text.includes(word)
-        )
+        url.includes('.mp4') ||
+        url.includes('.mkv') ||
+        url.includes('.avi') ||
+        url.includes('.mov') ||
+        url.includes('.m3u8') ||
+        url.includes('/movie/') ||
+        url.includes('/series/') ||
+        url.includes('/vod/')
       )
     }
 
-    function isSeriesItem(title = '', group = '', streamUrl = '') {
-      const text = normalizeText(`
-        ${title}
-        ${group}
-        ${streamUrl}
-      `)
+    function isBlocked(title = '', group = '', streamUrl = '') {
+      const text = normalizeText(`${title} ${group} ${streamUrl}`)
+
+      const blockedWords = [
+        'xxx',
+        'adult',
+        'porn',
+        'sexo',
+        'sex',
+        'camera',
+        'webcam',
+        'radio',
+        'udp://',
+        'rtmp://'
+      ]
+
+      return blockedWords.some(word => text.includes(word))
+    }
+
+    function looksLikeSeries(title = '', group = '', streamUrl = '') {
+      const text = normalizeText(`${title} ${group} ${streamUrl}`)
 
       return (
         /s\d{1,2}e\d{1,3}/i.test(title) ||
         text.includes('/series/') ||
         text.includes('series') ||
         text.includes('serie') ||
-        text.includes('seriados') ||
+        text.includes('seriado') ||
         text.includes('temporada') ||
         text.includes('episodio') ||
-        text.includes('episode') ||
-        text.includes('tv show') ||
-        text.includes('shows')
-      )
-    }
-
-    function isMovieItem(title = '', group = '', streamUrl = '') {
-      const text = normalizeText(`
-        ${title}
-        ${group}
-        ${streamUrl}
-      `)
-
-      const movieWords = [
-        'filmes',
-        'filme',
-        'movie',
-        'movies',
-        'cinema',
-        'vod',
-        'lancamento',
-        'lancamentos',
-        'acao',
-        'aventura',
-        'comedia',
-        'drama',
-        'terror',
-        'suspense',
-        'romance',
-        'nacional',
-        'dublado',
-        'legendado',
-        '4k'
-      ]
-
-      return (
-        text.includes('/movie/') ||
-        streamUrl.toLowerCase().includes('.mp4') ||
-        streamUrl.toLowerCase().includes('.mkv') ||
-        streamUrl.toLowerCase().includes('.avi') ||
-        movieWords.some(word =>
-          text.includes(word)
-        )
+        text.includes('episode')
       )
     }
 
     for (const lineRaw of lines) {
-      const line =
-        lineRaw.trim()
-
+      const line = lineRaw.trim()
       if (!line) continue
 
       if (line.startsWith('#EXTINF')) {
-        const titleMatch =
-          line.match(/,(.*)$/)
+        const titleMatch = line.match(/,(.*)$/)
+        const logoMatch = line.match(/tvg-logo="([^"]*)"/)
+        const groupMatch = line.match(/group-title="([^"]*)"/)
 
-        const logoMatch =
-          line.match(/tvg-logo="([^"]*)"/)
-
-        const groupMatch =
-          line.match(/group-title="([^"]*)"/)
-
-        let title =
-          titleMatch
-            ? titleMatch[1].trim()
-            : 'VOD'
-
-        title =
-          cleanTitle(title)
-
-        const group =
-          groupMatch
-            ? groupMatch[1].trim()
-            : ''
+        const rawTitle = titleMatch ? titleMatch[1].trim() : 'VOD'
+        const title = cleanTitle(rawTitle)
 
         current = {
-          title,
-          group,
-          logo:
-            logoMatch
-              ? logoMatch[1]
-              : ''
+          title: title || rawTitle || 'VOD',
+          group: groupMatch ? groupMatch[1].trim() : '',
+          logo: logoMatch ? logoMatch[1].trim() : ''
         }
 
         continue
       }
 
       if (current && line.startsWith('http')) {
+        const streamUrl = line.trim()
+
         try {
-          const streamUrl =
-            line.trim()
-
-          const live =
-            isLiveItem(
-              current.title,
-              current.group,
-              streamUrl
-            )
-
-          const series =
-            isSeriesItem(
-              current.title,
-              current.group,
-              streamUrl
-            )
-
-          const movie =
-            isMovieItem(
-              current.title,
-              current.group,
-              streamUrl
-            )
-
-          if (
-            targetType === 'Series' &&
-            !series
-          ) {
+          if (!isVideoUrl(streamUrl)) {
             skipped++
             current = null
             continue
           }
 
-          if (
-            targetType === 'Filmes' &&
-            (
-              live ||
-              series ||
-              !movie
-            )
-          ) {
+          if (isBlocked(current.title, current.group, streamUrl)) {
             skipped++
             current = null
             continue
           }
 
-          const finalCategory =
-            targetType === 'Series'
-              ? 'Series'
-              : 'Filmes'
+          const isSeries = looksLikeSeries(
+            current.title,
+            current.group,
+            streamUrl
+          )
 
-          const exists =
-            await pool.query(
-              `
-              SELECT id
-              FROM movies
-              WHERE video = $1
-              LIMIT 1
-              `,
-              [
-                streamUrl
-              ]
-            )
+          if (targetType === 'Series' && !isSeries) {
+            skipped++
+            current = null
+            continue
+          }
+
+          if (targetType === 'Filmes' && isSeries) {
+            skipped++
+            current = null
+            continue
+          }
+
+          const exists = await pool.query(
+            `
+            SELECT id
+            FROM movies
+            WHERE video = $1
+            LIMIT 1
+            `,
+            [streamUrl]
+          )
 
           if (exists.rows.length > 0) {
             skipped++
@@ -1638,18 +1529,18 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
             [
               current.title,
               '',
-              finalCategory,
+              targetType,
               current.logo,
               current.logo,
               streamUrl,
-              `Importado IPTV - ${current.group || finalCategory}`
+              `Importado M3U - ${current.group || targetType}`
             ]
           )
 
           added++
         } catch (err) {
           skipped++
-          console.log(err.message)
+          console.log('ERRO ITEM M3U:', err.message)
         }
 
         current = null
@@ -1665,9 +1556,7 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
     console.log(err)
 
     res.status(500).json({
-      error:
-        err.message ||
-        'erro importar filmes'
+      error: err.message || 'erro importar filmes'
     })
   }
 })
