@@ -51,7 +51,7 @@ const PORT = process.env.PORT || 3000
 const JWT_SECRET = 'iptv_panel_secret_2026'
 
 app.use(cors({ origin: '*' }))
-app.use(express.json({ limit: '50mb' }))
+app.use(express.json({ limit: '200mb' }))
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -1419,6 +1419,32 @@ app.delete('/channels-clear', auth, adminOnly, async (req, res) => {
   }
 })
 
+app.post('/import-m3u-file', auth, adminOnly, async (req, res) => {
+  try {
+    const { text } = req.body
+
+    if (!text || !text.includes('#EXTM3U')) {
+      return res.status(400).json({
+        error: 'Arquivo M3U inválido'
+      })
+    }
+
+    const channels = parseM3U(text)
+    const added = await saveChannels(channels)
+
+    res.json({
+      success: true,
+      encontrados: channels.length,
+      adicionados: added
+    })
+  } catch (err) {
+    console.log('ERRO IMPORT FILE M3U:', err)
+
+    res.status(500).json({
+      error: 'erro ao importar arquivo M3U'
+    })
+  }
+})
 app.post('/import-m3u', auth, async (req, res) => {
   try {
     const { url } = req.body
