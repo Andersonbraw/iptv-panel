@@ -338,8 +338,6 @@ async function fetchM3UText(playlistUrl) {
           Connection: 'keep-alive',
           'Cache-Control': 'no-cache',
           Pragma: 'no-cache',
-          Referer: server,
-          Origin: server,
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/148.0.0.0 Safari/537.36'
         }
