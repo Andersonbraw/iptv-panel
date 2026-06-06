@@ -10,6 +10,9 @@ function AdminChannels() {
   const [channels, setChannels] = useState([])
   const [search, setSearch] = useState('')
   const [m3uUrl, setM3uUrl] = useState('')
+  const [xtreamServer, setXtreamServer] = useState('')
+  const [xtreamUser, setXtreamUser] = useState('')
+  const [xtreamPass, setXtreamPass] = useState('')
   const [loading, setLoading] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState('Todos')
 
@@ -88,6 +91,50 @@ function AdminChannels() {
     } catch (err) {
       console.log(err)
       alert(err.response?.data?.error || 'Erro ao carregar canais')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function importXtream() {
+    if (
+      !xtreamServer.trim() ||
+      !xtreamUser.trim() ||
+      !xtreamPass.trim()
+    ) {
+      alert('Preencha servidor, usuário e senha Xtream')
+      return
+    }
+
+    try {
+      setLoading(true)
+
+      const res = await axios.post(
+        `${API}/xtream/import`,
+        {
+          server: xtreamServer.trim(),
+          username: xtreamUser.trim(),
+          password: xtreamPass.trim()
+        },
+        authHeaders
+      )
+
+      alert(
+        `Importação Xtream concluída!\n\nCanais: ${
+          res.data.channels || 0
+        }\nFilmes: ${res.data.movies || 0}\nSéries: ${
+          res.data.series || 0
+        }\nIgnorados: ${res.data.skipped || 0}`
+      )
+
+      await loadChannels()
+    } catch (err) {
+      console.log(err)
+
+      alert(
+        err.response?.data?.error ||
+          'Erro ao importar Xtream'
+      )
     } finally {
       setLoading(false)
     }
@@ -263,6 +310,40 @@ function AdminChannels() {
         />
       </div>
 
+      <div style={styles.xtreamBox}>
+        <h2 style={styles.boxTitle}>Importar Xtream Codes</h2>
+
+        <div style={styles.actions}>
+          <input
+            type='text'
+            placeholder='Servidor Xtream. Ex: http://poobookprog.top'
+            value={xtreamServer}
+            onChange={e => setXtreamServer(e.target.value)}
+            style={styles.m3uInput}
+          />
+
+          <input
+            type='text'
+            placeholder='Usuário Xtream'
+            value={xtreamUser}
+            onChange={e => setXtreamUser(e.target.value)}
+            style={styles.smallInput}
+          />
+
+          <input
+            type='password'
+            placeholder='Senha Xtream'
+            value={xtreamPass}
+            onChange={e => setXtreamPass(e.target.value)}
+            style={styles.smallInput}
+          />
+
+          <button style={styles.greenButton} onClick={importXtream}>
+            Importar Xtream
+          </button>
+        </div>
+      </div>
+
       <div style={styles.categories}>
         {categories.map(cat => (
           <button
@@ -289,7 +370,7 @@ function AdminChannels() {
         />
 
         <button style={styles.blueButton} onClick={importM3U}>
-          Importar
+          Importar M3U
         </button>
 
         <button style={styles.blueButton} onClick={loadChannels}>
@@ -399,6 +480,20 @@ const styles = {
     minWidth: 280
   },
 
+  xtreamBox: {
+    background: '#020617',
+    border: '1px solid rgba(56,189,248,0.25)',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 20
+  },
+
+  boxTitle: {
+    margin: '0 0 14px 0',
+    color: '#38bdf8',
+    fontSize: 20
+  },
+
   categories: {
     display: 'flex',
     gap: 10,
@@ -443,12 +538,31 @@ const styles = {
     color: '#fff'
   },
 
+  smallInput: {
+    minWidth: 190,
+    padding: 14,
+    borderRadius: 14,
+    border: 'none',
+    background: '#020617',
+    color: '#fff'
+  },
+
   blueButton: {
     padding: '14px 18px',
     border: 'none',
     borderRadius: 14,
     background: 'linear-gradient(90deg,#38bdf8,#0ea5e9)',
     color: '#000',
+    fontWeight: 'bold',
+    cursor: 'pointer'
+  },
+
+  greenButton: {
+    padding: '14px 18px',
+    border: 'none',
+    borderRadius: 14,
+    background: 'linear-gradient(90deg,#22c55e,#16a34a)',
+    color: '#fff',
     fontWeight: 'bold',
     cursor: 'pointer'
   },
