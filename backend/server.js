@@ -2277,6 +2277,49 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
     })
   }
 })
+app.get('/proxy-stream', async (req, res) => {
+  try {
+    const { url } = req.query
+
+    if (!url) {
+      return res.status(400).send('url obrigatória')
+    }
+
+    const streamUrl = decodeURIComponent(String(url))
+
+    if (!streamUrl.startsWith('http://') && !streamUrl.startsWith('https://')) {
+      return res.status(400).send('url inválida')
+    }
+
+    const response = await fetch(streamUrl, {
+      headers: {
+        Accept: '*/*',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/148.0.0.0 Safari/537.36'
+      }
+    })
+
+    if (!response.ok) {
+      return res.status(response.status).send(`stream erro ${response.status}`)
+    }
+
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Content-Type', response.headers.get('content-type') || 'application/vnd.apple.mpegurl')
+
+    const text = await response.text()
+
+    const fixedText = text.replace(
+      /(http:\/\/[^\s]+)/g,
+      match =>
+        `https://iptv-backend-cuxf.onrender.com/proxy-stream?url=${encodeURIComponent(match)}`
+    )
+
+    res.send(fixedText)
+  } catch (err) {
+    console.log('PROXY STREAM ERROR:', err.message)
+    res.status(500).send('erro proxy stream')
+  }
+})
 app.get('/', (req, res) => {
   res.send('IPTV SERVER ONLINE')
 })
