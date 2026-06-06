@@ -2027,7 +2027,7 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
     password = String(password).trim()
 
     const baseApi =
-      `${server}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
+      `${server.replace(/\/+$/, '')}/player_api.php?username=${username}&password=${password}`
 
     const authRes = await fetch(baseApi)
 
