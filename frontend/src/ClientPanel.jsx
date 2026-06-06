@@ -14,6 +14,16 @@ const API =
 const PLACEHOLDER =
   'https://upload.wikimedia.org/wikipedia/commons/6/65/No-Image-Placeholder.svg'
 
+function proxyStreamUrl(url = '') {
+  if (!url) return ''
+
+  if (String(url).startsWith(`${API}/proxy-stream`)) {
+    return url
+  }
+
+  return `${API}/proxy-stream?url=${encodeURIComponent(url)}`
+}
+
 function HlsPlayer({ src, style }) {
   const videoRef = useRef(null)
   const [loading, setLoading] = useState(true)
@@ -546,9 +556,14 @@ function ClientPanel({
 
     await reportWatching(title, type)
 
+    const rawStreamUrl =
+      item.video ||
+      item.url ||
+      ''
+
     setSelectedStream({
       title: item.title || item.name,
-      url: item.video || item.url
+      url: proxyStreamUrl(rawStreamUrl)
     })
 
     setPlayerOpen(true)
@@ -686,7 +701,7 @@ function ClientPanel({
               <section style={styles.hero}>
                 <div style={styles.playerWrap}>
                   <HlsPlayer
-                    src={selectedChannel.url}
+                    src={proxyStreamUrl(selectedChannel.url)}
                     style={styles.video}
                   />
                 </div>
