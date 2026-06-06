@@ -2017,77 +2017,61 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
     let { server, username, password } = req.body
 
     if (!server || !username || !password) {
-      return res.status(400).json({
-        error: 'Servidor, usuário e senha são obrigatórios'
-      })
+      return res.status(400).json({ error: 'Servidor, usuário e senha são obrigatórios' })
     }
 
     server = String(server).trim().replace(/\/+$/, '')
     username = String(username).trim()
     password = String(password).trim()
 
-    const baseApi =
-      `${server.replace(/\/+$/, '')}/player_api.php?username=${username}&password=${password}`
-
-    const authRes = await fetch(baseApi)
-
-    if (!authRes.ok) {
-      return res.status(400).json({
-        error: `Xtream inválido HTTP ${authRes.status}`
-      })
+    const headers = {
+      Accept: 'application/json,text/plain,*/*',
+      'User-Agent': 'Mozilla/5.0'
     }
 
-    const authData = await authRes.json()
+    const baseApi = `${server}/player_api.php?username=${username}&password=${password}`
+
+    async function getJson(url) {
+      const r = await fetch(url, { headers })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      return await r.json()
+    }
+
+    const authData = await getJson(baseApi)
 
     if (!authData?.user_info || Number(authData.user_info.auth) !== 1) {
-      return res.status(400).json({
-        error: 'Login Xtream inválido ou expirado'
-      })
+      return res.status(400).json({ error: 'Login Xtream inválido ou expirado' })
     }
 
-    const [liveRes, vodRes, seriesRes] = await Promise.all([
-      fetch(`${baseApi}&action=get_live_streams`),
-      fetch(`${baseApi}&action=get_vod_streams`),
-      fetch(`${baseApi}&action=get_series`)
-    ])
+    const live = await getJson(`${baseApi}&action=get_live_streams`)
+    const vod = await getJson(`${baseApi}&action=get_vod_streams`)
+    const series = await getJson(`${baseApi}&action=get_series`)
 
-    const live = liveRes.ok ? await liveRes.json() : []
-    const vod = vodRes.ok ? await vodRes.json() : []
-    const series = seriesRes.ok ? await seriesRes.json() : []
-
-    let channelsAdded = 0
-    let moviesAdded = 0
-    let seriesAdded = 0
+    let channels = 0
+    let movies = 0
+    let seriesCount = 0
     let skipped = 0
 
     for (const item of Array.isArray(live) ? live : []) {
       try {
-        if (!item.stream_id || !item.name) {
-          skipped++
-          continue
-        }
-
-        const url =
-          `${server}/live/${username}/${password}/${item.stream_id}.m3u8`
+        const url = `${server}/live/${username}/${password}/${item.stream_id}.m3u8`
 
         const result = await pool.query(
           `
-          INSERT INTO channels
-          (name, url, category, logo, is_online)
+          INSERT INTO channels (name, url, category, logo, is_online)
           VALUES ($1,$2,$3,$4,true)
-          ON CONFLICT (url)
-          DO NOTHING
+          ON CONFLICT (url) DO NOTHING
           RETURNING id
           `,
           [
-            item.name,
+            item.name || 'Canal',
             url,
             item.category_name || `Categoria ${item.category_id || 'TV'}`,
             item.stream_icon || ''
           ]
         )
 
-        if (result.rows.length > 0) channelsAdded++
+        if (result.rows.length > 0) channels++
       } catch {
         skipped++
       }
@@ -2095,23 +2079,11 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
 
     for (const item of Array.isArray(vod) ? vod : []) {
       try {
-        if (!item.stream_id || !item.name) {
-          skipped++
-          continue
-        }
-
         const ext = item.container_extension || 'mp4'
-
-        const url =
-          `${server}/movie/${username}/${password}/${item.stream_id}.${ext}`
+        const url = `${server}/movie/${username}/${password}/${item.stream_id}.${ext}`
 
         const exists = await pool.query(
-          `
-          SELECT id
-          FROM movies
-          WHERE video = $1
-          LIMIT 1
-          `,
+          `SELECT id FROM movies WHERE video = $1 LIMIT 1`,
           [url]
         )
 
@@ -2122,22 +2094,21 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
 
         await pool.query(
           `
-          INSERT INTO movies
-          (title, year, category, image, banner, video, description)
+          INSERT INTO movies (title, year, category, image, banner, video, description)
           VALUES ($1,$2,$3,$4,$5,$6,$7)
           `,
           [
-            item.name,
+            item.name || 'Filme',
             item.year || '',
             'Filmes',
             item.stream_icon || '',
             item.stream_icon || '',
             url,
-            item.plot || item.description || 'Importado via Xtream'
+            item.plot || 'Importado via Xtream'
           ]
         )
 
-        moviesAdded++
+        movies++
       } catch {
         skipped++
       }
@@ -2145,21 +2116,10 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
 
     for (const item of Array.isArray(series) ? series : []) {
       try {
-        if (!item.series_id || !item.name) {
-          skipped++
-          continue
-        }
-
-        const url =
-          `${server}/series/${username}/${password}/${item.series_id}.m3u8`
+        const url = `${server}/series/${username}/${password}/${item.series_id}.m3u8`
 
         const exists = await pool.query(
-          `
-          SELECT id
-          FROM movies
-          WHERE title = $1 AND category = 'Series'
-          LIMIT 1
-          `,
+          `SELECT id FROM movies WHERE title = $1 AND category = 'Series' LIMIT 1`,
           [item.name]
         )
 
@@ -2170,12 +2130,11 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
 
         await pool.query(
           `
-          INSERT INTO movies
-          (title, year, category, image, banner, video, description)
+          INSERT INTO movies (title, year, category, image, banner, video, description)
           VALUES ($1,$2,$3,$4,$5,$6,$7)
           `,
           [
-            item.name,
+            item.name || 'Série',
             item.year || '',
             'Series',
             item.cover || '',
@@ -2185,7 +2144,7 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
           ]
         )
 
-        seriesAdded++
+        seriesCount++
       } catch {
         skipped++
       }
@@ -2193,16 +2152,16 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
 
     res.json({
       success: true,
-      channels: channelsAdded,
-      movies: moviesAdded,
-      series: seriesAdded,
+      channels,
+      movies,
+      series: seriesCount,
       skipped
     })
   } catch (err) {
-    console.log('XTREAM IMPORT ERROR:', err)
+    console.log('XTREAM IMPORT ERROR:', err.message)
 
     res.status(500).json({
-      error: 'erro ao importar Xtream'
+      error: err.message || 'erro ao importar Xtream'
     })
   }
 })
