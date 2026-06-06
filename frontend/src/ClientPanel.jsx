@@ -158,6 +158,7 @@ function ClientPanel({
   const [selectedSeriesTitle, setSelectedSeriesTitle] = useState('')
   const [selectedSeason, setSelectedSeason] = useState('1')
   const [currentWatching, setCurrentWatching] = useState(null)
+  const [focusedKey, setFocusedKey] = useState('menu-tv')
 
   const authHeaders = useMemo(() => {
     return {
@@ -186,6 +187,43 @@ function ClientPanel({
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
+  }
+
+  function focusStyle(key, baseStyle) {
+    if (focusedKey !== key) return baseStyle
+
+    return {
+      ...baseStyle,
+      outline: '3px solid #38bdf8',
+      outlineOffset: 3,
+      boxShadow: '0 0 28px rgba(56,189,248,0.75)',
+      transform: 'scale(1.06)',
+      zIndex: 30
+    }
+  }
+
+  function tvFocusable(key, action) {
+    return {
+      tabIndex: 0,
+      role: 'button',
+      onFocus: () => setFocusedKey(key),
+      onBlur: () => setFocusedKey(''),
+      onKeyDown: event => {
+        const keyName = event.key
+
+        if (
+          keyName === 'Enter' ||
+          keyName === 'NumpadEnter' ||
+          keyName === ' '
+        ) {
+          event.preventDefault()
+
+          if (action) {
+            action()
+          }
+        }
+      }
+    }
   }
 
   function cleanGroupTitle(title = '') {
@@ -304,6 +342,35 @@ function ClientPanel({
   useEffect(() => {
     loadData()
   }, [])
+
+  useEffect(() => {
+    function handleRemoteBack(event) {
+      if (event.key !== 'Escape' && event.key !== 'Backspace') return
+
+      if (playerOpen) {
+        event.preventDefault()
+        closePlayer()
+        return
+      }
+
+      if (episodesModal) {
+        event.preventDefault()
+        setEpisodesModal(false)
+        return
+      }
+
+      if (page !== 'tv') {
+        event.preventDefault()
+        setPage('tv')
+      }
+    }
+
+    window.addEventListener('keydown', handleRemoteBack)
+
+    return () => {
+      window.removeEventListener('keydown', handleRemoteBack)
+    }
+  }, [playerOpen, episodesModal, page])
 
   useEffect(() => {
     if (!currentWatching?.title) return
@@ -545,40 +612,47 @@ function ClientPanel({
         </div>
 
         <button
-          style={
+          {...tvFocusable('menu-tv', () => setPage('tv'))}
+          style={focusStyle(
+            'menu-tv',
             page === 'tv'
               ? styles.activeMenuButton
               : styles.menuButton
-          }
+          )}
           onClick={() => setPage('tv')}
         >
           TV ao Vivo
         </button>
 
         <button
-          style={
+          {...tvFocusable('menu-movies', () => setPage('movies'))}
+          style={focusStyle(
+            'menu-movies',
             page === 'movies'
               ? styles.activeMenuButton
               : styles.menuButton
-          }
+          )}
           onClick={() => setPage('movies')}
         >
           Filmes
         </button>
 
         <button
-          style={
+          {...tvFocusable('menu-series', () => setPage('series'))}
+          style={focusStyle(
+            'menu-series',
             page === 'series'
               ? styles.activeMenuButton
               : styles.menuButton
-          }
+          )}
           onClick={() => setPage('series')}
         >
           Séries
         </button>
 
         <button
-          style={styles.redButton}
+          {...tvFocusable('menu-logout', handleLogout)}
+          style={focusStyle('menu-logout', styles.redButton)}
           onClick={handleLogout}
         >
           Sair
@@ -637,11 +711,16 @@ function ClientPanel({
               {filteredChannels.map(channel => (
                 <div
                   key={channel.id}
-                  style={
+                  {...tvFocusable(
+                    `channel-${channel.id}`,
+                    () => selectChannel(channel)
+                  )}
+                  style={focusStyle(
+                    `channel-${channel.id}`,
                     selectedChannel?.id === channel.id
                       ? styles.activeCard
                       : styles.card
-                  }
+                  )}
                   onMouseEnter={e => {
                     if (selectedChannel?.id !== channel.id) {
                       e.currentTarget.style.transform = 'scale(1.08)'
@@ -720,7 +799,11 @@ function ClientPanel({
               ).map(item => (
                 <div
                   key={item.id}
-                  style={styles.movieCard}
+                  {...tvFocusable(
+                    `${page}-${item.id}`,
+                    () => chooseEpisode(item)
+                  )}
+                  style={focusStyle(`${page}-${item.id}`, styles.movieCard)}
                   onMouseEnter={e => {
                     e.currentTarget.style.transform = 'scale(1.05)'
                     e.currentTarget.style.zIndex = 20
@@ -733,6 +816,7 @@ function ClientPanel({
                     e.currentTarget.style.boxShadow =
                       '0 0 0 rgba(0,0,0,0)'
                   }}
+                  onClick={() => chooseEpisode(item)}
                 >
                   {item.episodes > 1 && (
                     <div style={styles.episodeBadge}>
@@ -759,8 +843,18 @@ function ClientPanel({
                     </h3>
 
                     <button
-                      style={styles.watchButton}
-                      onClick={() => chooseEpisode(item)}
+                      {...tvFocusable(
+                        `watch-${page}-${item.id}`,
+                        () => chooseEpisode(item)
+                      )}
+                      style={focusStyle(
+                        `watch-${page}-${item.id}`,
+                        styles.watchButton
+                      )}
+                      onClick={event => {
+                        event.stopPropagation()
+                        chooseEpisode(item)
+                      }}
                     >
                       {item.episodes > 1
                         ? 'Episódios'
@@ -794,7 +888,11 @@ function ClientPanel({
                 </div>
 
                 <button
-                  style={styles.closeEpisodesButton}
+                  {...tvFocusable('episodes-close', () => setEpisodesModal(false))}
+                  style={focusStyle(
+                    'episodes-close',
+                    styles.closeEpisodesButton
+                  )}
                   onClick={() => setEpisodesModal(false)}
                 >
                   ✕
@@ -805,11 +903,16 @@ function ClientPanel({
                 {seasons.map(season => (
                   <button
                     key={season}
-                    style={
+                    {...tvFocusable(
+                      `season-${season}`,
+                      () => setSelectedSeason(season)
+                    )}
+                    style={focusStyle(
+                      `season-${season}`,
                       String(selectedSeason) === String(season)
                         ? styles.activeSeasonButton
                         : styles.seasonButton
-                    }
+                    )}
                     onClick={() => setSelectedSeason(season)}
                   >
                     Temporada {season}
@@ -821,7 +924,17 @@ function ClientPanel({
                 {episodesBySeason.map((ep, index) => (
                   <button
                     key={`${ep.id}-${index}`}
-                    style={styles.episodeItem}
+                    {...tvFocusable(
+                      `episode-${ep.id}-${index}`,
+                      () => {
+                        openPlayer(ep)
+                        setEpisodesModal(false)
+                      }
+                    )}
+                    style={focusStyle(
+                      `episode-${ep.id}-${index}`,
+                      styles.episodeItem
+                    )}
                     onClick={() => {
                       openPlayer(ep)
                       setEpisodesModal(false)
