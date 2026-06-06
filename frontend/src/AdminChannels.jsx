@@ -10,6 +10,7 @@ function AdminChannels() {
   const [channels, setChannels] = useState([])
   const [search, setSearch] = useState('')
   const [m3uUrl, setM3uUrl] = useState('')
+  const [m3uFile, setM3uFile] = useState(null)
   const [xtreamServer, setXtreamServer] = useState('')
   const [xtreamUser, setXtreamUser] = useState('')
   const [xtreamPass, setXtreamPass] = useState('')
@@ -54,20 +55,13 @@ function AdminChannels() {
     )
       return 'Esportes'
 
-    if (
-      n.includes('movie') ||
-      n.includes('cine') ||
-      n.includes('hbo')
-    )
+    if (n.includes('movie') || n.includes('cine') || n.includes('hbo'))
       return 'Filmes'
 
     if (n.includes('news') || n.includes('cnn')) return 'Notícias'
-
     if (n.includes('kids') || n.includes('cartoon')) return 'Infantil'
-
     if (n.includes('discovery') || n.includes('natgeo'))
       return 'Documentários'
-
     if (n.includes('music') || n.includes('mtv')) return 'Música'
 
     if (
@@ -84,9 +78,7 @@ function AdminChannels() {
   async function loadChannels() {
     try {
       setLoading(true)
-
       const res = await axios.get(`${API}/channels`, authHeaders)
-
       setChannels(res.data || [])
     } catch (err) {
       console.log(err)
@@ -96,12 +88,46 @@ function AdminChannels() {
     }
   }
 
+  async function importM3UFile() {
+    if (!m3uFile) {
+      alert('Selecione o arquivo Lista.m3u primeiro')
+      return
+    }
+
+    try {
+      setLoading(true)
+
+      const text = await m3uFile.text()
+
+      if (!text.includes('#EXTM3U')) {
+        alert('Arquivo M3U inválido')
+        return
+      }
+
+      const res = await axios.post(
+        `${API}/import-m3u-file`,
+        { text },
+        authHeaders
+      )
+
+      alert(
+        `Arquivo M3U importado!\n\nEncontrados: ${
+          res.data.encontrados || 0
+        }\nImportados: ${res.data.adicionados || 0}`
+      )
+
+      setM3uFile(null)
+      await loadChannels()
+    } catch (err) {
+      console.log(err)
+      alert(err.response?.data?.error || 'Erro ao importar arquivo M3U')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   async function importXtream() {
-    if (
-      !xtreamServer.trim() ||
-      !xtreamUser.trim() ||
-      !xtreamPass.trim()
-    ) {
+    if (!xtreamServer.trim() || !xtreamUser.trim() || !xtreamPass.trim()) {
       alert('Preencha servidor, usuário e senha Xtream')
       return
     }
@@ -130,11 +156,7 @@ function AdminChannels() {
       await loadChannels()
     } catch (err) {
       console.log(err)
-
-      alert(
-        err.response?.data?.error ||
-          'Erro ao importar Xtream'
-      )
+      alert(err.response?.data?.error || 'Erro ao importar Xtream')
     } finally {
       setLoading(false)
     }
@@ -151,16 +173,12 @@ function AdminChannels() {
 
       const res = await axios.post(
         `${API}/import-m3u`,
-        {
-          url: m3uUrl
-        },
+        { url: m3uUrl },
         authHeaders
       )
 
       alert(`Importados: ${res.data.adicionados || 0}`)
-
       setM3uUrl('')
-
       await loadChannels()
     } catch (err) {
       console.log(err)
@@ -175,7 +193,6 @@ function AdminChannels() {
 
     try {
       await axios.delete(`${API}/channels/${id}`, authHeaders)
-
       setChannels(prev => prev.filter(c => c.id !== id))
     } catch (err) {
       console.log(err)
@@ -197,13 +214,10 @@ function AdminChannels() {
       setLoading(true)
 
       await Promise.all(
-        offline.map(c =>
-          axios.delete(`${API}/channels/${c.id}`, authHeaders)
-        )
+        offline.map(c => axios.delete(`${API}/channels/${c.id}`, authHeaders))
       )
 
       alert(`${offline.length} canais removidos`)
-
       await loadChannels()
     } catch (err) {
       console.log(err)
@@ -214,31 +228,19 @@ function AdminChannels() {
   }
 
   async function removeForeignChannels() {
-    if (
-      !confirm(
-        'Remover canais estrangeiros/adultos/suspeitos direto do banco?'
-      )
-    )
+    if (!confirm('Remover canais estrangeiros/adultos/suspeitos direto do banco?'))
       return
 
     try {
       setLoading(true)
 
-      const res = await axios.delete(
-        `${API}/channels/clean-bad`,
-        authHeaders
-      )
+      const res = await axios.delete(`${API}/channels/clean-bad`, authHeaders)
 
       alert(`${res.data.removed || 0} canais removidos`)
-
       await loadChannels()
     } catch (err) {
       console.log(err)
-
-      alert(
-        err.response?.data?.error ||
-          'Erro ao remover canais suspeitos'
-      )
+      alert(err.response?.data?.error || 'Erro ao remover canais suspeitos')
     } finally {
       setLoading(false)
     }
@@ -253,11 +255,9 @@ function AdminChannels() {
       await axios.delete(`${API}/channels-clear`, authHeaders)
 
       setChannels([])
-
       alert('Todos canais removidos')
     } catch (err) {
       console.log(err)
-
       alert(err.response?.data?.error || 'Erro ao limpar canais')
     } finally {
       setLoading(false)
@@ -271,11 +271,8 @@ function AdminChannels() {
   const filteredChannels = useMemo(() => {
     return channels.filter(channel => {
       const channelName = normalize(channel.name || '')
-
       const matchesSearch = channelName.includes(normalize(search))
-
       const category = detectCategory(channel.name)
-
       const matchesCategory =
         categoryFilter === 'Todos' ? true : category === categoryFilter
 
@@ -308,6 +305,29 @@ function AdminChannels() {
           onChange={e => setSearch(e.target.value)}
           style={styles.searchInput}
         />
+      </div>
+
+      <div style={styles.xtreamBox}>
+        <h2 style={styles.boxTitle}>Importar arquivo M3U do computador</h2>
+
+        <div style={styles.actions}>
+          <input
+            type='file'
+            accept='.m3u,.m3u8,.txt'
+            onChange={e => setM3uFile(e.target.files?.[0] || null)}
+            style={styles.fileInput}
+          />
+
+          <button style={styles.greenButton} onClick={importM3UFile}>
+            Importar arquivo M3U
+          </button>
+
+          {m3uFile && (
+            <div style={styles.fileName}>
+              Arquivo selecionado: {m3uFile.name}
+            </div>
+          )}
+        </div>
       </div>
 
       <div style={styles.xtreamBox}>
@@ -349,11 +369,7 @@ function AdminChannels() {
           <button
             key={cat}
             onClick={() => setCategoryFilter(cat)}
-            style={
-              categoryFilter === cat
-                ? styles.activeCategory
-                : styles.category
-            }
+            style={categoryFilter === cat ? styles.activeCategory : styles.category}
           >
             {cat}
           </button>
@@ -370,7 +386,7 @@ function AdminChannels() {
         />
 
         <button style={styles.blueButton} onClick={importM3U}>
-          Importar M3U
+          Importar M3U URL
         </button>
 
         <button style={styles.blueButton} onClick={loadChannels}>
@@ -545,6 +561,22 @@ const styles = {
     border: 'none',
     background: '#020617',
     color: '#fff'
+  },
+
+  fileInput: {
+    flex: 1,
+    minWidth: 300,
+    padding: 12,
+    borderRadius: 14,
+    border: '1px solid rgba(56,189,248,0.25)',
+    background: '#020617',
+    color: '#fff'
+  },
+
+  fileName: {
+    color: '#38bdf8',
+    fontWeight: 'bold',
+    padding: 14
   },
 
   blueButton: {
