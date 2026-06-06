@@ -1430,13 +1430,204 @@ app.post('/import-m3u-file', auth, adminOnly, async (req, res) => {
       })
     }
 
-    const channels = parseM3U(text)
-    const added = await saveChannels(channels)
+    const lines = text.split('\n')
+
+    let current = null
+    let canais = 0
+    let filmes = 0
+    let series = 0
+    let ignorados = 0
+
+    function isSeriesTitle(title = '') {
+      const t = normalizeText(title)
+
+      return (
+        /s\d{1,2}e\d{1,3}/i.test(title) ||
+        t.includes('temporada') ||
+        t.includes('episodio') ||
+        t.includes('episódio') ||
+        t.includes('episode') ||
+        t.includes('ep ')
+      )
+    }
+
+    function isBadContent(title = '', group = '', streamUrl = '') {
+      const t = normalizeText(`${title} ${group} ${streamUrl}`)
+
+      const blocked = [
+        'xxx',
+        'adult',
+        'adults',
+        'porn',
+        'porno',
+        'sexo',
+        'sex ',
+        'sexy',
+        'nude',
+        'naked',
+        'webcam',
+        'camgirl',
+        'camtv',
+        'mycamtv',
+        'onlyfans',
+        'fansly',
+        'bonga',
+        'livejasmin',
+        'erotic'
+      ]
+
+      return blocked.some(word => t.includes(word))
+    }
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim()
+      if (!line) continue
+
+      if (line.startsWith('#EXTINF')) {
+        const nameMatch = line.match(/,(.*)$/)
+        const logoMatch = line.match(/tvg-logo="([^"]*)"/)
+        const groupMatch = line.match(/group-title="([^"]*)"/)
+
+        current = {
+          title: nameMatch ? nameMatch[1].trim() : 'IPTV',
+          logo: logoMatch ? logoMatch[1].trim() : '',
+          group: groupMatch ? groupMatch[1].trim() : 'Outros'
+        }
+
+        continue
+      }
+
+      if (current && line.startsWith('http')) {
+        const streamUrl = line
+        const lowerUrl = streamUrl.toLowerCase()
+        const lowerGroup = normalizeText(current.group || '')
+        const lowerTitle = normalizeText(current.title || '')
+
+        try {
+          if (isBadContent(current.title, current.group, streamUrl)) {
+            ignorados++
+            current = null
+            continue
+          }
+
+          if (
+            lowerUrl.includes('/series/') ||
+            lowerGroup.includes('series') ||
+            lowerGroup.includes('serie') ||
+            lowerGroup.includes('série') ||
+            isSeriesTitle(current.title)
+          ) {
+            await pool.query(
+              `
+              INSERT INTO movies
+              (
+                title,
+                year,
+                category,
+                image,
+                banner,
+                video,
+                description
+              )
+              VALUES ($1,$2,$3,$4,$5,$6,$7)
+              `,
+              [
+                current.title,
+                '',
+                'Series',
+                current.logo,
+                current.logo,
+                streamUrl,
+                `Importado M3U - ${current.group}`
+              ]
+            )
+
+            series++
+          } else if (
+            lowerUrl.includes('/movie/') ||
+            lowerUrl.includes('/vod/') ||
+            lowerGroup.includes('filme') ||
+            lowerGroup.includes('movie') ||
+            lowerGroup.includes('vod') ||
+            lowerUrl.match(/\.(mp4|mkv|avi|mov)$/)
+          ) {
+            await pool.query(
+              `
+              INSERT INTO movies
+              (
+                title,
+                year,
+                category,
+                image,
+                banner,
+                video,
+                description
+              )
+              VALUES ($1,$2,$3,$4,$5,$6,$7)
+              `,
+              [
+                current.title,
+                '',
+                'Filmes',
+                current.logo,
+                current.logo,
+                streamUrl,
+                `Importado M3U - ${current.group}`
+              ]
+            )
+
+            filmes++
+          } else if (
+            lowerUrl.includes('/live/') ||
+            lowerGroup.includes('canais') ||
+            lowerGroup.includes('canal') ||
+            lowerGroup.includes('tv') ||
+            lowerTitle.includes('tv')
+          ) {
+            const result = await pool.query(
+              `
+              INSERT INTO channels
+              (
+                name,
+                url,
+                category,
+                logo,
+                is_online
+              )
+              VALUES ($1,$2,$3,$4,true)
+              ON CONFLICT (url)
+              DO NOTHING
+              RETURNING id
+              `,
+              [
+                current.title,
+                streamUrl,
+                current.group,
+                current.logo
+              ]
+            )
+
+            if (result.rows.length > 0) canais++
+          } else {
+            ignorados++
+          }
+        } catch (err) {
+          ignorados++
+          console.log('ERRO IMPORT ITEM M3U:', err.message)
+        }
+
+        current = null
+      }
+    }
 
     res.json({
       success: true,
-      encontrados: channels.length,
-      adicionados: added
+      canais,
+      filmes,
+      series,
+      ignorados,
+      encontrados: canais + filmes + series + ignorados,
+      adicionados: canais + filmes + series
     })
   } catch (err) {
     console.log('ERRO IMPORT FILE M3U:', err)
