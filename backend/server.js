@@ -2012,6 +2012,200 @@ app.post('/watching', auth, async (req, res) => {
   }
 })
 
+app.post('/xtream/import', auth, adminOnly, async (req, res) => {
+  try {
+    let { server, username, password } = req.body
+
+    if (!server || !username || !password) {
+      return res.status(400).json({
+        error: 'Servidor, usuário e senha são obrigatórios'
+      })
+    }
+
+    server = String(server).trim().replace(/\/+$/, '')
+    username = String(username).trim()
+    password = String(password).trim()
+
+    const baseApi =
+      `${server}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
+
+    const authRes = await fetch(baseApi)
+
+    if (!authRes.ok) {
+      return res.status(400).json({
+        error: `Xtream inválido HTTP ${authRes.status}`
+      })
+    }
+
+    const authData = await authRes.json()
+
+    if (!authData?.user_info || Number(authData.user_info.auth) !== 1) {
+      return res.status(400).json({
+        error: 'Login Xtream inválido ou expirado'
+      })
+    }
+
+    const [liveRes, vodRes, seriesRes] = await Promise.all([
+      fetch(`${baseApi}&action=get_live_streams`),
+      fetch(`${baseApi}&action=get_vod_streams`),
+      fetch(`${baseApi}&action=get_series`)
+    ])
+
+    const live = liveRes.ok ? await liveRes.json() : []
+    const vod = vodRes.ok ? await vodRes.json() : []
+    const series = seriesRes.ok ? await seriesRes.json() : []
+
+    let channelsAdded = 0
+    let moviesAdded = 0
+    let seriesAdded = 0
+    let skipped = 0
+
+    for (const item of Array.isArray(live) ? live : []) {
+      try {
+        if (!item.stream_id || !item.name) {
+          skipped++
+          continue
+        }
+
+        const url =
+          `${server}/live/${username}/${password}/${item.stream_id}.m3u8`
+
+        const result = await pool.query(
+          `
+          INSERT INTO channels
+          (name, url, category, logo, is_online)
+          VALUES ($1,$2,$3,$4,true)
+          ON CONFLICT (url)
+          DO NOTHING
+          RETURNING id
+          `,
+          [
+            item.name,
+            url,
+            item.category_name || `Categoria ${item.category_id || 'TV'}`,
+            item.stream_icon || ''
+          ]
+        )
+
+        if (result.rows.length > 0) channelsAdded++
+      } catch {
+        skipped++
+      }
+    }
+
+    for (const item of Array.isArray(vod) ? vod : []) {
+      try {
+        if (!item.stream_id || !item.name) {
+          skipped++
+          continue
+        }
+
+        const ext = item.container_extension || 'mp4'
+
+        const url =
+          `${server}/movie/${username}/${password}/${item.stream_id}.${ext}`
+
+        const exists = await pool.query(
+          `
+          SELECT id
+          FROM movies
+          WHERE video = $1
+          LIMIT 1
+          `,
+          [url]
+        )
+
+        if (exists.rows.length > 0) {
+          skipped++
+          continue
+        }
+
+        await pool.query(
+          `
+          INSERT INTO movies
+          (title, year, category, image, banner, video, description)
+          VALUES ($1,$2,$3,$4,$5,$6,$7)
+          `,
+          [
+            item.name,
+            item.year || '',
+            'Filmes',
+            item.stream_icon || '',
+            item.stream_icon || '',
+            url,
+            item.plot || item.description || 'Importado via Xtream'
+          ]
+        )
+
+        moviesAdded++
+      } catch {
+        skipped++
+      }
+    }
+
+    for (const item of Array.isArray(series) ? series : []) {
+      try {
+        if (!item.series_id || !item.name) {
+          skipped++
+          continue
+        }
+
+        const url =
+          `${server}/series/${username}/${password}/${item.series_id}.m3u8`
+
+        const exists = await pool.query(
+          `
+          SELECT id
+          FROM movies
+          WHERE title = $1 AND category = 'Series'
+          LIMIT 1
+          `,
+          [item.name]
+        )
+
+        if (exists.rows.length > 0) {
+          skipped++
+          continue
+        }
+
+        await pool.query(
+          `
+          INSERT INTO movies
+          (title, year, category, image, banner, video, description)
+          VALUES ($1,$2,$3,$4,$5,$6,$7)
+          `,
+          [
+            item.name,
+            item.year || '',
+            'Series',
+            item.cover || '',
+            item.cover || '',
+            url,
+            item.plot || 'Importado via Xtream'
+          ]
+        )
+
+        seriesAdded++
+      } catch {
+        skipped++
+      }
+    }
+
+    res.json({
+      success: true,
+      channels: channelsAdded,
+      movies: moviesAdded,
+      series: seriesAdded,
+      skipped
+    })
+  } catch (err) {
+    console.log('XTREAM IMPORT ERROR:', err)
+
+    res.status(500).json({
+      error: 'erro ao importar Xtream'
+    })
+  }
+})
 app.get('/', (req, res) => {
   res.send('IPTV SERVER ONLINE')
 })
