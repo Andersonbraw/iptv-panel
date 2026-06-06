@@ -316,6 +316,7 @@ function normalizeText(value = '') {
 }
 
 async function fetchM3UText(playlistUrl) {
+  console.log('M3U URL RECEBIDA:', playlistUrl)
   const fixedUrl =
     normalizeGithubUrl(playlistUrl)
 
