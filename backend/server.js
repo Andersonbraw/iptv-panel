@@ -2287,36 +2287,84 @@ app.get('/proxy-stream', async (req, res) => {
 
     const streamUrl = decodeURIComponent(String(url))
 
-    if (!streamUrl.startsWith('http://') && !streamUrl.startsWith('https://')) {
+    if (
+      !streamUrl.startsWith('http://') &&
+      !streamUrl.startsWith('https://')
+    ) {
       return res.status(400).send('url inválida')
     }
 
     const response = await fetch(streamUrl, {
       headers: {
         Accept: '*/*',
+        Connection: 'keep-alive',
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/148.0.0.0 Safari/537.36'
       }
     })
 
     if (!response.ok) {
-      return res.status(response.status).send(`stream erro ${response.status}`)
+      return res
+        .status(response.status)
+        .send(`stream erro ${response.status}`)
     }
 
     res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Content-Type', response.headers.get('content-type') || 'application/vnd.apple.mpegurl')
+    res.setHeader('Access-Control-Allow-Headers', '*')
 
-    const text = await response.text()
+    const contentType =
+      response.headers.get('content-type') || ''
 
-    const fixedText = text.replace(
-      /(http:\/\/[^\s]+)/g,
-      match =>
-        `https://iptv-backend-cuxf.onrender.com/proxy-stream?url=${encodeURIComponent(match)}`
+    const isPlaylist =
+      contentType.includes('mpegurl') ||
+      contentType.includes('application/vnd.apple.mpegurl') ||
+      streamUrl.includes('.m3u8')
+
+    if (isPlaylist) {
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.apple.mpegurl'
+      )
+
+      const text = await response.text()
+      const baseUrl =
+        streamUrl.substring(0, streamUrl.lastIndexOf('/') + 1)
+
+      const fixedText = text
+        .split('\n')
+        .map(line => {
+          const clean = line.trim()
+
+          if (!clean || clean.startsWith('#')) {
+            return line
+          }
+
+          const absoluteUrl = clean.startsWith('http')
+            ? clean
+            : baseUrl + clean
+
+          return `https://iptv-backend-cuxf.onrender.com/proxy-stream?url=${encodeURIComponent(
+            absoluteUrl
+          )}`
+        })
+        .join('\n')
+
+      return res.send(fixedText)
+    }
+
+    res.setHeader(
+      'Content-Type',
+      contentType || 'application/octet-stream'
     )
 
-    res.send(fixedText)
+    const buffer = Buffer.from(await response.arrayBuffer())
+
+    return res.send(buffer)
   } catch (err) {
     console.log('PROXY STREAM ERROR:', err.message)
+
     res.status(500).send('erro proxy stream')
   }
 })
