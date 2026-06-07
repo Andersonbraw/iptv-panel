@@ -1249,12 +1249,33 @@ app.get('/me', auth, async (req, res) => {
 
 app.get('/channels', auth, async (req, res) => {
   try {
+    let limit = parseInt(req.query.limit, 10)
+
+    if (isNaN(limit) || limit <= 0) {
+      limit = 50
+    }
+
+    if (limit > 200) {
+      limit = 200
+    }
+
     const result =
-      await pool.query(`
-        SELECT *
+      await pool.query(
+        `
+        SELECT
+          id,
+          name,
+          url,
+          category,
+          logo,
+          is_online,
+          created_at
         FROM channels
         ORDER BY name ASC
-      `)
+        LIMIT $1
+        `,
+        [limit]
+      )
 
     res.json(result.rows)
   } catch (err) {
@@ -1671,12 +1692,35 @@ app.post('/import-m3u', auth, async (req, res) => {
 
 app.get('/movies', auth, async (req, res) => {
   try {
+    let limit = parseInt(req.query.limit, 10)
+
+    if (isNaN(limit) || limit <= 0) {
+      limit = 50
+    }
+
+    if (limit > 200) {
+      limit = 200
+    }
+
     const result =
-      await pool.query(`
-        SELECT *
+      await pool.query(
+        `
+        SELECT
+          id,
+          title,
+          year,
+          category,
+          image,
+          banner,
+          video,
+          description,
+          created_at
         FROM movies
         ORDER BY id DESC
-      `)
+        LIMIT $1
+        `,
+        [limit]
+      )
 
     res.json(result.rows)
   } catch (err) {
@@ -2177,13 +2221,36 @@ app.delete('/movies-clear', auth, adminOnly, async (req, res) => {
 
 app.get('/series', auth, async (req, res) => {
   try {
+    let limit = parseInt(req.query.limit, 10)
+
+    if (isNaN(limit) || limit <= 0) {
+      limit = 50
+    }
+
+    if (limit > 200) {
+      limit = 200
+    }
+
     const result =
-      await pool.query(`
-        SELECT *
+      await pool.query(
+        `
+        SELECT
+          id,
+          title,
+          year,
+          category,
+          image,
+          banner,
+          video,
+          description,
+          created_at
         FROM movies
         WHERE category = 'Series'
         ORDER BY id DESC
-      `)
+        LIMIT $1
+        `,
+        [limit]
+      )
 
     res.json(result.rows)
   } catch (err) {
