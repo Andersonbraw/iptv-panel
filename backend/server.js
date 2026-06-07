@@ -2479,50 +2479,43 @@ app.get('/proxy-stream', async (req, res) => {
 
     const streamUrl = decodeURIComponent(String(url))
 
-    if (
-      !streamUrl.startsWith('http://') &&
-      !streamUrl.startsWith('https://')
-    ) {
+    if (!streamUrl.startsWith('http://') && !streamUrl.startsWith('https://')) {
       return res.status(400).send('url inválida')
     }
 
     const response = await fetch(streamUrl, {
+      method: 'GET',
+      redirect: 'follow',
       headers: {
         Accept: '*/*',
         Connection: 'keep-alive',
         'Cache-Control': 'no-cache',
         Pragma: 'no-cache',
+        Referer: streamUrl,
+        Origin: new URL(streamUrl).origin,
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/148.0.0.0 Safari/537.36'
       }
     })
 
     if (!response.ok) {
-      return res
-        .status(response.status)
-        .send(`stream erro ${response.status}`)
+      return res.status(response.status).send(`stream erro ${response.status}`)
     }
 
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Headers', '*')
+    res.setHeader('Cache-Control', 'no-cache')
 
-    const contentType =
-      response.headers.get('content-type') || ''
+    const contentType = response.headers.get('content-type') || ''
+    const lowerUrl = streamUrl.toLowerCase()
 
     const isPlaylist =
       contentType.includes('mpegurl') ||
       contentType.includes('application/vnd.apple.mpegurl') ||
-      streamUrl.includes('.m3u8')
+      lowerUrl.includes('.m3u8')
 
     if (isPlaylist) {
-      res.setHeader(
-        'Content-Type',
-        'application/vnd.apple.mpegurl'
-      )
-
       const text = await response.text()
-      const baseUrl =
-        streamUrl.substring(0, streamUrl.lastIndexOf('/') + 1)
 
       const fixedText = text
         .split('\n')
@@ -2533,9 +2526,13 @@ app.get('/proxy-stream', async (req, res) => {
             return line
           }
 
-          const absoluteUrl = clean.startsWith('http')
-            ? clean
-            : baseUrl + clean
+          let absoluteUrl = ''
+
+          try {
+            absoluteUrl = new URL(clean, streamUrl).href
+          } catch {
+            absoluteUrl = clean
+          }
 
           return `https://iptv-backend-cuxf.onrender.com/proxy-stream?url=${encodeURIComponent(
             absoluteUrl
@@ -2543,20 +2540,16 @@ app.get('/proxy-stream', async (req, res) => {
         })
         .join('\n')
 
+      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl')
       return res.send(fixedText)
     }
 
-    res.setHeader(
-      'Content-Type',
-      contentType || 'application/octet-stream'
-    )
+    res.setHeader('Content-Type', contentType || 'video/mp2t')
 
     const buffer = Buffer.from(await response.arrayBuffer())
-
     return res.send(buffer)
   } catch (err) {
     console.log('PROXY STREAM ERROR:', err.message)
-
     res.status(500).send('erro proxy stream')
   }
 })
