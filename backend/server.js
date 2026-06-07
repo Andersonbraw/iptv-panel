@@ -2311,7 +2311,7 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
           continue
         }
 
-        const streamUrl = `${server}/live/${username}/${password}/${item.stream_id}.ts`
+        const streamUrl = `${server}/live/${username}/${password}/${item.stream_id}.m3u8`
 
         const result = await pool.query(
           `
