@@ -56,7 +56,7 @@ function AdminReports() {
         <div>
           <h1 style={styles.title}>Relatórios Financeiros</h1>
           <p style={styles.subtitle}>
-            Vendas, comissões, lucro mensal e créditos dos revendedores.
+            Vendas, lucro mensal e créditos dos revendedores. Cada cliente 30 dias vale R$ 8,00.
           </p>
         </div>
 

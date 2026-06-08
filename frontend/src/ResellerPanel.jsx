@@ -241,7 +241,7 @@ Senha: ${createdLogin.password}
         <div style={styles.topBar}>
           <div>
             <h1 style={styles.title}>Painel Revendedor</h1>
-            <p style={styles.subtitle}>Clientes, teste 5 horas, créditos, vendas, comissões e lucro.</p>
+            <p style={styles.subtitle}>Clientes, teste 5 horas, créditos, vendas e lucro. Cada cliente 30 dias vale R$ 8,00.</p>
           </div>
         </div>
 

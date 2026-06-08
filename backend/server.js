@@ -221,6 +221,32 @@ async function initDb() {
     ON reseller_sales(reseller_id)
   `)
 
+  await pool.query(`
+    UPDATE reseller_sales
+    SET
+      sale_value = 0,
+      commission = 0,
+      profit = 0,
+      sale_type = 'teste_5h',
+      description = 'Teste 5 horas gerado'
+    WHERE
+      sale_type IN ('teste_24h','teste_5h')
+      OR LOWER(COALESCE(description, '')) LIKE '%teste%'
+  `)
+
+  await pool.query(`
+    UPDATE reseller_sales
+    SET
+      sale_value = 8,
+      commission = 0,
+      profit = 8,
+      sale_type = 'cliente_30_dias',
+      description = 'Cliente 30 dias criado'
+    WHERE
+      sale_type NOT IN ('teste_5h')
+      AND LOWER(COALESCE(description, '')) NOT LIKE '%teste%'
+  `)
+
   console.log('BANCO OK')
 }
 
