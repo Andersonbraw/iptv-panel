@@ -6,6 +6,7 @@ import AdminChannels from './AdminChannels'
 import AdminMovies from './AdminMovies'
 import AdminSeries from './AdminSeries'
 import AdminResellers from './AdminResellers'
+import AdminReports from './AdminReports'
 
 const API = 'https://iptv-backend-cuxf.onrender.com'
 
@@ -179,6 +180,20 @@ function AdminPanel({ user, setUser, logout }) {
             }
           >
             Revendedores
+          </button>
+
+          <button
+            type='button'
+            style={
+              page === 'reports'
+                ? styles.activeMenuButton
+                : styles.menuButton
+            }
+            onClick={() =>
+              setPage('reports')
+            }
+          >
+            Relatórios
           </button>
 
           <button

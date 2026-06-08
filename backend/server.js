@@ -183,6 +183,44 @@ async function initDb() {
     )
   `)
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS reseller_credit_history (
+      id SERIAL PRIMARY KEY,
+      reseller_id INTEGER,
+      admin_id INTEGER,
+      type TEXT,
+      amount INTEGER DEFAULT 0,
+      description TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `)
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_reseller_credit_history_reseller_id
+    ON reseller_credit_history(reseller_id)
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS reseller_sales (
+      id SERIAL PRIMARY KEY,
+      reseller_id INTEGER,
+      client_id INTEGER,
+      client_name TEXT,
+      client_email TEXT,
+      sale_type TEXT,
+      sale_value NUMERIC DEFAULT 0,
+      commission NUMERIC DEFAULT 0,
+      profit NUMERIC DEFAULT 0,
+      description TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `)
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_reseller_sales_reseller_id
+    ON reseller_sales(reseller_id)
+  `)
+
   console.log('BANCO OK')
 }
 
@@ -929,11 +967,124 @@ function adminOrReseller(req, res, next) {
   next()
 }
 
+
+function generateSimplePassword() {
+  return Math.random()
+    .toString(36)
+    .slice(2, 10)
+}
+
+async function addCreditHistory(resellerId, adminId, type, amount, description) {
+  try {
+    await pool.query(
+      `
+      INSERT INTO reseller_credit_history
+      (
+        reseller_id,
+        admin_id,
+        type,
+        amount,
+        description
+      )
+      VALUES ($1,$2,$3,$4,$5)
+      `,
+      [
+        resellerId,
+        adminId || null,
+        type || '',
+        Number(amount || 0),
+        description || ''
+      ]
+    )
+  } catch (err) {
+    console.log('ERRO CREDIT HISTORY:', err.message)
+  }
+}
+
+async function addResellerSale(resellerId, client, saleType = 'cliente_30_dias') {
+  const saleValue = saleType === 'teste_24h' ? 0 : 25
+  const commission = saleType === 'teste_24h' ? 0 : 10
+  const profit = Math.max(0, saleValue - commission)
+
+  try {
+    await pool.query(
+      `
+      INSERT INTO reseller_sales
+      (
+        reseller_id,
+        client_id,
+        client_name,
+        client_email,
+        sale_type,
+        sale_value,
+        commission,
+        profit,
+        description
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      `,
+      [
+        resellerId,
+        client.id,
+        client.name,
+        client.email,
+        saleType,
+        saleValue,
+        commission,
+        profit,
+        saleType === 'teste_24h'
+          ? 'Teste 24 horas gerado'
+          : 'Cliente premium 30 dias criado'
+      ]
+    )
+  } catch (err) {
+    console.log('ERRO ADD SALE:', err.message)
+  }
+}
+
+async function getResellerFinance(resellerId) {
+  const [salesResult, creditResult] = await Promise.all([
+    pool.query(
+      `
+      SELECT
+        COALESCE(SUM(sale_value),0)::NUMERIC AS vendas,
+        COALESCE(SUM(commission),0)::NUMERIC AS comissoes,
+        COALESCE(SUM(profit),0)::NUMERIC AS lucro,
+        COUNT(*)::INTEGER AS total_vendas
+      FROM reseller_sales
+      WHERE reseller_id = $1
+      `,
+      [resellerId]
+    ),
+    pool.query(
+      `
+      SELECT *
+      FROM reseller_credit_history
+      WHERE reseller_id = $1
+      ORDER BY id DESC
+      LIMIT 50
+      `,
+      [resellerId]
+    )
+  ])
+
+  return {
+    finance: salesResult.rows[0] || {
+      vendas: 0,
+      comissoes: 0,
+      lucro: 0,
+      total_vendas: 0
+    },
+    creditHistory: creditResult.rows || []
+  }
+}
+
+
 app.get('/reseller/dashboard', auth, adminOrReseller, async (req, res) => {
   try {
     const ownerId = req.user.id
 
-    const [meResult, clientsResult] = await Promise.all([
+    const [meResult, clientsResult, salesResult, financePack] = await Promise.all([
       pool.query(
         `
         SELECT id, name, email, role, status, credits
@@ -963,12 +1114,26 @@ app.get('/reseller/dashboard', auth, adminOrReseller, async (req, res) => {
         ORDER BY id DESC
         `,
         [ownerId]
-      )
+      ),
+      pool.query(
+        `
+        SELECT *
+        FROM reseller_sales
+        WHERE reseller_id = $1
+        ORDER BY id DESC
+        LIMIT 80
+        `,
+        [ownerId]
+      ),
+      getResellerFinance(ownerId)
     ])
 
     res.json({
       reseller: meResult.rows[0],
-      clients: clientsResult.rows
+      clients: clientsResult.rows,
+      sales: salesResult.rows,
+      finance: financePack.finance,
+      creditHistory: financePack.creditHistory
     })
   } catch (err) {
     console.log('ERRO RESELLER DASHBOARD:', err)
@@ -1045,6 +1210,20 @@ app.post('/reseller/clients/create-random', auth, adminOrReseller, async (req, r
       [ownerId]
     )
 
+    await addCreditHistory(
+      ownerId,
+      null,
+      'saida',
+      -1,
+      'Cliente 30 dias criado'
+    )
+
+    await addResellerSale(
+      ownerId,
+      result.rows[0],
+      'cliente_30_dias'
+    )
+
     res.json({
       success: true,
       user: result.rows[0],
@@ -1062,6 +1241,146 @@ app.post('/reseller/clients/create-random', auth, adminOrReseller, async (req, r
     })
   }
 })
+
+
+app.post('/reseller/clients/create-test', auth, adminOrReseller, async (req, res) => {
+  try {
+    const ownerId = req.user.id
+
+    const login = generateRandomLogin(req.body.name)
+
+    const result = await pool.query(
+      `
+      INSERT INTO users
+      (
+        name,
+        email,
+        password,
+        role,
+        status,
+        plan,
+        max_connections,
+        expires_at,
+        credits,
+        reseller_parent_id
+      )
+      VALUES ($1,$2,$3,'client','active','teste',1,NOW() + INTERVAL '24 hours',0,$4)
+      RETURNING id, name, email, role, status, plan, max_connections, expires_at, credits, reseller_parent_id
+      `,
+      [
+        login.name,
+        login.email,
+        login.password,
+        ownerId
+      ]
+    )
+
+    await addResellerSale(
+      ownerId,
+      result.rows[0],
+      'teste_24h'
+    )
+
+    res.json({
+      success: true,
+      user: result.rows[0],
+      login: {
+        name: login.name,
+        email: login.email,
+        password: login.password
+      }
+    })
+  } catch (err) {
+    console.log('ERRO CREATE TEST:', err)
+    res.status(500).json({
+      error: err.message || 'erro ao criar teste 24h'
+    })
+  }
+})
+
+app.patch('/reseller/clients/:id/name', auth, adminOrReseller, async (req, res) => {
+  try {
+    const { name } = req.body
+
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({
+        error: 'nome obrigatório'
+      })
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET name = $1
+      WHERE id = $2
+        AND reseller_parent_id = $3
+        AND role = 'client'
+      RETURNING id, name, email, status, plan, max_connections, expires_at
+      `,
+      [
+        String(name).trim(),
+        req.params.id,
+        req.user.id
+      ]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'cliente não encontrado'
+      })
+    }
+
+    res.json(result.rows[0])
+  } catch (err) {
+    console.log('ERRO RENAME CLIENT:', err)
+    res.status(500).json({
+      error: 'erro ao editar nome'
+    })
+  }
+})
+
+app.post('/reseller/clients/:id/reset-password', auth, adminOrReseller, async (req, res) => {
+  try {
+    const password = generateSimplePassword()
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET password = $1
+      WHERE id = $2
+        AND reseller_parent_id = $3
+        AND role = 'client'
+      RETURNING id, name, email
+      `,
+      [
+        password,
+        req.params.id,
+        req.user.id
+      ]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'cliente não encontrado'
+      })
+    }
+
+    res.json({
+      success: true,
+      login: {
+        name: result.rows[0].name,
+        email: result.rows[0].email,
+        password
+      }
+    })
+  } catch (err) {
+    console.log('ERRO RESET PASSWORD:', err)
+    res.status(500).json({
+      error: 'erro ao resetar senha'
+    })
+  }
+})
+
 
 app.patch('/reseller/clients/:id', auth, adminOrReseller, async (req, res) => {
   try {
@@ -1147,11 +1466,16 @@ app.get('/admin/resellers', auth, adminOnly, async (req, res) => {
         r.role,
         r.status,
         r.credits,
-        COUNT(c.id)::INTEGER AS clients_count
+        COUNT(DISTINCT c.id)::INTEGER AS clients_count,
+        COALESCE(SUM(s.sale_value),0)::NUMERIC AS vendas,
+        COALESCE(SUM(s.commission),0)::NUMERIC AS comissoes,
+        COALESCE(SUM(s.profit),0)::NUMERIC AS lucro
       FROM users r
       LEFT JOIN users c
         ON c.reseller_parent_id = r.id
         AND c.role = 'client'
+      LEFT JOIN reseller_sales s
+        ON s.reseller_id = r.id
       WHERE r.role = 'reseller'
       GROUP BY r.id
       ORDER BY r.id DESC
@@ -1197,6 +1521,16 @@ app.post('/admin/resellers/create', auth, adminOnly, async (req, res) => {
         credits
       ]
     )
+
+    if (credits > 0) {
+      await addCreditHistory(
+        result.rows[0].id,
+        req.user.id,
+        'entrada',
+        credits,
+        'Créditos iniciais do revendedor'
+      )
+    }
 
     res.json({
       success: true,
@@ -1282,6 +1616,14 @@ app.post('/admin/resellers/:id/add-credits', auth, adminOnly, async (req, res) =
         error: 'revendedor não encontrado'
       })
     }
+
+    await addCreditHistory(
+      req.params.id,
+      req.user.id,
+      'entrada',
+      amount,
+      'Créditos adicionados pelo admin'
+    )
 
     res.json(result.rows[0])
   } catch (err) {
@@ -3052,6 +3394,90 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
     })
   }
 })
+
+app.get('/admin/reports/resellers', auth, adminOnly, async (req, res) => {
+  try {
+    const [summaryResult, monthResult, creditResult] = await Promise.all([
+      pool.query(
+        `
+        SELECT
+          r.id,
+          r.name,
+          r.email,
+          r.credits,
+          COUNT(DISTINCT c.id)::INTEGER AS clients_count,
+          COALESCE(SUM(s.sale_value),0)::NUMERIC AS vendas,
+          COALESCE(SUM(s.commission),0)::NUMERIC AS comissoes,
+          COALESCE(SUM(s.profit),0)::NUMERIC AS lucro
+        FROM users r
+        LEFT JOIN users c
+          ON c.reseller_parent_id = r.id
+          AND c.role = 'client'
+        LEFT JOIN reseller_sales s
+          ON s.reseller_id = r.id
+        WHERE r.role = 'reseller'
+        GROUP BY r.id
+        ORDER BY lucro DESC
+        `
+      ),
+      pool.query(
+        `
+        SELECT
+          DATE_TRUNC('month', created_at) AS mes,
+          COALESCE(SUM(sale_value),0)::NUMERIC AS vendas,
+          COALESCE(SUM(commission),0)::NUMERIC AS comissoes,
+          COALESCE(SUM(profit),0)::NUMERIC AS lucro,
+          COUNT(*)::INTEGER AS total_vendas
+        FROM reseller_sales
+        GROUP BY DATE_TRUNC('month', created_at)
+        ORDER BY mes DESC
+        LIMIT 12
+        `
+      ),
+      pool.query(
+        `
+        SELECT
+          h.*,
+          u.name AS reseller_name
+        FROM reseller_credit_history h
+        LEFT JOIN users u ON u.id = h.reseller_id
+        ORDER BY h.id DESC
+        LIMIT 100
+        `
+      )
+    ])
+
+    const totals = summaryResult.rows.reduce(
+      (acc, item) => {
+        acc.vendas += Number(item.vendas || 0)
+        acc.comissoes += Number(item.comissoes || 0)
+        acc.lucro += Number(item.lucro || 0)
+        acc.clients += Number(item.clients_count || 0)
+        return acc
+      },
+      {
+        vendas: 0,
+        comissoes: 0,
+        lucro: 0,
+        clients: 0
+      }
+    )
+
+    res.json({
+      totals,
+      resellers: summaryResult.rows,
+      monthly: monthResult.rows,
+      creditHistory: creditResult.rows
+    })
+  } catch (err) {
+    console.log('ERRO REPORTS RESELLERS:', err)
+    res.status(500).json({
+      error: 'erro ao carregar relatórios'
+    })
+  }
+})
+
+
 app.get('/proxy-stream', async (req, res) => {
   try {
     const { url } = req.query
