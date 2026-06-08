@@ -46,9 +46,9 @@ function AdminPanel({ user, setUser, logout }) {
     try {
       const [channels, movies, series] =
         await Promise.all([
-          axios.get(`${API}/channels`, authHeaders),
-          axios.get(`${API}/movies`, authHeaders),
-          axios.get(`${API}/series`, authHeaders)
+          axios.get(`${API}/channels?limit=1000`, authHeaders),
+          axios.get(`${API}/movies?limit=1000`, authHeaders),
+          axios.get(`${API}/series?limit=1000`, authHeaders)
         ])
 
       setStats({
