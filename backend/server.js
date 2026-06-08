@@ -1291,8 +1291,8 @@ app.get('/channels', auth, async (req, res) => {
       limit = 50
     }
 
-    if (limit > 200) {
-      limit = 200
+    if (limit > 5000) {
+      limit = 5000
     }
 
     let offset = parseInt(req.query.offset, 10)
@@ -1740,8 +1740,8 @@ app.get('/movies', auth, async (req, res) => {
       limit = 50
     }
 
-    if (limit > 200) {
-      limit = 200
+    if (limit > 5000) {
+      limit = 5000
     }
 
     let offset = parseInt(req.query.offset, 10)
@@ -2278,8 +2278,8 @@ app.get('/series', auth, async (req, res) => {
       limit = 50
     }
 
-    if (limit > 200) {
-      limit = 200
+    if (limit > 5000) {
+      limit = 5000
     }
 
     let offset = parseInt(req.query.offset, 10)
