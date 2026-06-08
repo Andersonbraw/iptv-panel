@@ -613,7 +613,9 @@ function ClientPanel({
 
     setSelectedStream({
       title: item.title || item.name,
-      url: proxyStreamUrl(rawStreamUrl)
+      url: page === 'tv'
+        ? proxyStreamUrl(rawStreamUrl)
+        : rawStreamUrl
     })
 
     setPlayerOpen(true)
