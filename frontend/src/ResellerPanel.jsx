@@ -22,7 +22,7 @@ function getExpireColor(date) {
   return '#22c55e'
 }
 
-function ResellerPanel({ user, setUser, logout }) {
+function ResellerPanel({ user, logout }) {
   const [reseller, setReseller] = useState(user)
   const [clients, setClients] = useState([])
   const [sales, setSales] = useState([])
@@ -92,13 +92,13 @@ function ResellerPanel({ user, setUser, logout }) {
     }
   }
 
-  async function createTest24h() {
+  async function createTest5h() {
     try {
       setLoading(true)
 
       const res = await axios.post(
         `${API}/reseller/clients/create-test`,
-        { name: clientName || 'Teste 24H' },
+        { name: clientName || 'Teste 5H' },
         { headers }
       )
 
@@ -106,7 +106,7 @@ function ResellerPanel({ user, setUser, logout }) {
       setClientName('')
       await loadDashboard()
     } catch (err) {
-      alert(err.response?.data?.error || 'Erro ao criar teste 24h')
+      alert(err.response?.data?.error || 'Erro ao criar teste 5h')
     } finally {
       setLoading(false)
     }
@@ -241,13 +241,13 @@ Senha: ${createdLogin.password}
         <div style={styles.topBar}>
           <div>
             <h1 style={styles.title}>Painel Revendedor</h1>
-            <p style={styles.subtitle}>Clientes, créditos, vendas, comissões e lucro.</p>
+            <p style={styles.subtitle}>Clientes, teste 5 horas, créditos, vendas, comissões e lucro.</p>
           </div>
         </div>
 
         <div style={styles.createBox}>
           <input
-            placeholder='Nome do cliente'
+            placeholder='Nome do cliente ou teste'
             value={clientName}
             onChange={e => setClientName(e.target.value)}
             style={styles.input}
@@ -270,10 +270,10 @@ Senha: ${createdLogin.password}
 
           <button
             style={styles.yellowButton}
-            onClick={createTest24h}
+            onClick={createTest5h}
             disabled={loading}
           >
-            Gerar teste 24h
+            Gerar teste 5 horas
           </button>
 
           <button style={styles.grayButton} onClick={loadDashboard}>Atualizar</button>
@@ -281,7 +281,7 @@ Senha: ${createdLogin.password}
 
         {createdLogin && (
           <div style={styles.loginBox}>
-            <h3>Login criado</h3>
+            <h3>Login criado / Senha resetada</h3>
             <input readOnly value={`Nome: ${createdLogin.name}`} style={styles.copyInput} />
             <input readOnly value={`Email: ${createdLogin.email}`} style={styles.copyInput} />
             <input readOnly value={`Senha: ${createdLogin.password}`} style={styles.copyInput} />
@@ -310,7 +310,7 @@ Senha: ${createdLogin.password}
               <small>Plano: {client.plan || 'premium'} • Conexões: {client.max_connections || 1}</small><br />
               <small>Status: {client.status}</small><br />
               <small style={{ color: getExpireColor(client.expires_at), fontWeight: 'bold' }}>
-                Vence: {client.expires_at ? new Date(client.expires_at).toLocaleDateString('pt-BR') : 'Sem vencimento'}
+                Vence: {client.expires_at ? new Date(client.expires_at).toLocaleString('pt-BR') : 'Sem vencimento'}
               </small><br />
               <small style={styles.watching}>
                 Assistindo: {client.watching ? `${client.watching_type}: ${client.watching}` : 'Nada no momento'}
@@ -321,7 +321,7 @@ Senha: ${createdLogin.password}
               <button style={styles.greenButton} onClick={() => updateClient(client, { status: 'active' })}>Ativar</button>
               <button style={styles.redButtonSmall} onClick={() => updateClient(client, { status: 'blocked' })}>Bloquear</button>
               <button style={styles.grayButton} onClick={() => renameClient(client)}>Editar nome</button>
-              <button style={styles.grayButton} onClick={() => resetPassword(client)}>Resetar senha</button>
+              <button style={styles.purpleButton} onClick={() => resetPassword(client)}>Resetar senha</button>
               <button style={styles.grayButton} onClick={() => updateClient(client, { max_connections: 1 })}>1 conexão</button>
               <button style={styles.grayButton} onClick={() => updateClient(client, { max_connections: 2 })}>2 conexões</button>
               <button style={styles.yellowButton} onClick={() => addDays(client, 30)}>+30 dias</button>
@@ -393,7 +393,7 @@ const styles = {
   clientName: { fontSize: 18 },
   email: { color: '#94a3b8' },
   watching: { color: '#38bdf8', fontWeight: 'bold' },
-  actions: { display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', minWidth: 340 },
+  actions: { display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', maxWidth: 720 },
   loading: { background: '#020617', border: '1px solid #12345f', padding: 14, borderRadius: 14, marginBottom: 20, color: '#38bdf8', fontWeight: 'bold' },
   historyGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, marginTop: 30 },
   historyBox: { background: '#020617', border: '1px solid rgba(56,189,248,0.15)', borderRadius: 20, padding: 18 },
@@ -404,6 +404,7 @@ const styles = {
   redButtonSmall: { padding: '10px 14px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#ef4444,#dc2626)', color: '#fff', fontWeight: 'bold', cursor: 'pointer' },
   yellowButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#facc15,#eab308)', color: '#000', fontWeight: 'bold', cursor: 'pointer' },
   grayButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: '#334155', color: '#fff', fontWeight: 'bold', cursor: 'pointer' },
+  purpleButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#a855f7,#7e22ce)', color: '#fff', fontWeight: 'bold', cursor: 'pointer' },
   deleteButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#991b1b,#7f1d1d)', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }
 }
 

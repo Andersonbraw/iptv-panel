@@ -10,6 +10,18 @@ function money(value) {
   })
 }
 
+function getExpireColor(date) {
+  if (!date) return '#94a3b8'
+
+  const diffDays = Math.ceil(
+    (new Date(date).getTime() - Date.now()) / 1000 / 60 / 60 / 24
+  )
+
+  if (diffDays <= 0) return '#ef4444'
+  if (diffDays <= 3) return '#facc15'
+  return '#22c55e'
+}
+
 function AdminResellers() {
   const [resellers, setResellers] = useState([])
   const [clients, setClients] = useState([])
@@ -64,10 +76,7 @@ function AdminResellers() {
 
       const res = await axios.post(
         `${API}/admin/resellers/create`,
-        {
-          name,
-          credits: Number(credits || 0)
-        },
+        { name, credits: Number(credits || 0) },
         { headers }
       )
 
@@ -88,17 +97,11 @@ function AdminResellers() {
 
       await axios.post(
         `${API}/admin/resellers/${reseller.id}/add-credits`,
-        {
-          amount: Number(addAmount || 0)
-        },
+        { amount: Number(addAmount || 0) },
         { headers }
       )
 
       await loadResellers()
-
-      if (selectedReseller?.id === reseller.id) {
-        await loadClients(reseller)
-      }
     } catch (err) {
       alert(err.response?.data?.error || 'Erro ao adicionar créditos')
     } finally {
@@ -119,6 +122,66 @@ function AdminResellers() {
       await loadResellers()
     } catch (err) {
       alert(err.response?.data?.error || 'Erro ao atualizar revendedor')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function updateClient(client, data) {
+    try {
+      setLoading(true)
+
+      await axios.patch(
+        `${API}/admin/resellers/clients/${client.id}`,
+        data,
+        { headers }
+      )
+
+      if (selectedReseller) await loadClients(selectedReseller)
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erro ao atualizar cliente')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function renameClient(client) {
+    const newName = prompt('Novo nome do cliente:', client.name)
+
+    if (!newName) return
+
+    try {
+      setLoading(true)
+
+      await axios.patch(
+        `${API}/admin/resellers/clients/${client.id}/name`,
+        { name: newName },
+        { headers }
+      )
+
+      if (selectedReseller) await loadClients(selectedReseller)
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erro ao editar nome')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function resetPassword(client) {
+    if (!confirm('Resetar senha deste cliente?')) return
+
+    try {
+      setLoading(true)
+
+      const res = await axios.post(
+        `${API}/admin/resellers/clients/${client.id}/reset-password`,
+        {},
+        { headers }
+      )
+
+      setCreatedLogin(res.data.login)
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erro ao resetar senha')
     } finally {
       setLoading(false)
     }
@@ -173,33 +236,15 @@ Senha: ${createdLogin.password}
       </div>
 
       <div style={styles.createBox}>
-        <input
-          placeholder='Nome do revendedor'
-          value={name}
-          onChange={e => setName(e.target.value)}
-          style={styles.input}
-        />
-
-        <input
-          type='number'
-          min='0'
-          value={credits}
-          onChange={e => setCredits(e.target.value)}
-          style={styles.smallInput}
-        />
-
-        <button style={styles.blueButton} onClick={createReseller} disabled={loading}>
-          Criar Revendedor
-        </button>
-
-        <button style={styles.grayButton} onClick={loadResellers} disabled={loading}>
-          Atualizar
-        </button>
+        <input placeholder='Nome do revendedor' value={name} onChange={e => setName(e.target.value)} style={styles.input} />
+        <input type='number' min='0' value={credits} onChange={e => setCredits(e.target.value)} style={styles.smallInput} />
+        <button style={styles.blueButton} onClick={createReseller} disabled={loading}>Criar Revendedor</button>
+        <button style={styles.grayButton} onClick={loadResellers} disabled={loading}>Atualizar</button>
       </div>
 
       {createdLogin && (
         <div style={styles.loginBox}>
-          <h3>Login do revendedor criado</h3>
+          <h3>Login criado / Senha resetada</h3>
           <input readOnly value={`Nome: ${createdLogin.name}`} style={styles.copyInput} />
           <input readOnly value={`Email: ${createdLogin.email}`} style={styles.copyInput} />
           <input readOnly value={`Senha: ${createdLogin.password}`} style={styles.copyInput} />
@@ -225,46 +270,21 @@ Senha: ${createdLogin.password}
               </div>
 
               <div style={styles.actions}>
-                <input
-                  type='number'
-                  min='1'
-                  value={addAmount}
-                  onChange={e => setAddAmount(e.target.value)}
-                  style={styles.creditInput}
-                />
-
-                <button style={styles.yellowButton} onClick={() => addCredits(reseller)}>
-                  + Créditos
-                </button>
-
-                <button style={styles.greenButton} onClick={() => updateReseller(reseller, { status: 'active' })}>
-                  Ativar
-                </button>
-
-                <button style={styles.redButton} onClick={() => updateReseller(reseller, { status: 'blocked' })}>
-                  Bloquear
-                </button>
-
-                <button style={styles.blueButton} onClick={() => loadClients(reseller)}>
-                  Ver clientes
-                </button>
-
-                <button style={styles.deleteButton} onClick={() => deleteReseller(reseller)}>
-                  Excluir
-                </button>
+                <input type='number' min='1' value={addAmount} onChange={e => setAddAmount(e.target.value)} style={styles.creditInput} />
+                <button style={styles.yellowButton} onClick={() => addCredits(reseller)}>+ Créditos</button>
+                <button style={styles.greenButton} onClick={() => updateReseller(reseller, { status: 'active' })}>Ativar</button>
+                <button style={styles.redButton} onClick={() => updateReseller(reseller, { status: 'blocked' })}>Bloquear</button>
+                <button style={styles.blueButton} onClick={() => loadClients(reseller)}>Ver clientes</button>
+                <button style={styles.deleteButton} onClick={() => deleteReseller(reseller)}>Excluir</button>
               </div>
             </div>
           ))}
         </div>
 
         <div style={styles.clientsBox}>
-          <h2 style={styles.clientsTitle}>
-            {selectedReseller ? `Clientes de ${selectedReseller.name}` : 'Clientes do revendedor'}
-          </h2>
+          <h2 style={styles.clientsTitle}>{selectedReseller ? `Clientes de ${selectedReseller.name}` : 'Clientes do revendedor'}</h2>
 
-          {!selectedReseller && (
-            <p style={styles.subtitle}>Clique em "Ver clientes" em um revendedor.</p>
-          )}
+          {!selectedReseller && <p style={styles.subtitle}>Clique em "Ver clientes" em um revendedor.</p>}
 
           {clients.map(client => (
             <div key={client.id} style={styles.clientCard}>
@@ -272,7 +292,16 @@ Senha: ${createdLogin.password}
               <p style={styles.email}>{client.email}</p>
               <small>Status: {client.status}</small><br />
               <small>Plano: {client.plan}</small><br />
-              <small>Vence: {client.expires_at ? new Date(client.expires_at).toLocaleDateString('pt-BR') : 'Sem vencimento'}</small>
+              <small style={{ color: getExpireColor(client.expires_at), fontWeight: 'bold' }}>
+                Vence: {client.expires_at ? new Date(client.expires_at).toLocaleString('pt-BR') : 'Sem vencimento'}
+              </small>
+
+              <div style={styles.clientActions}>
+                <button style={styles.grayButton} onClick={() => renameClient(client)}>Editar nome</button>
+                <button style={styles.purpleButton} onClick={() => resetPassword(client)}>Resetar senha</button>
+                <button style={styles.greenButton} onClick={() => updateClient(client, { status: 'active' })}>Ativar</button>
+                <button style={styles.redButton} onClick={() => updateClient(client, { status: 'blocked' })}>Bloquear</button>
+              </div>
             </div>
           ))}
         </div>
@@ -293,7 +322,7 @@ const styles = {
   loginBox: { background: '#020617', padding: 18, borderRadius: 18, marginBottom: 20, border: '1px solid #38bdf8' },
   copyInput: { width: '100%', padding: 12, marginBottom: 10, borderRadius: 12, border: '1px solid #334155', background: '#07142b', color: '#fff', boxSizing: 'border-box' },
   loading: { background: '#020617', border: '1px solid #12345f', padding: 14, borderRadius: 14, marginBottom: 20, color: '#38bdf8', fontWeight: 'bold' },
-  mainGrid: { display: 'grid', gridTemplateColumns: '1.3fr 0.8fr', gap: 18 },
+  mainGrid: { display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: 18 },
   card: { display: 'flex', justifyContent: 'space-between', gap: 20, background: 'linear-gradient(180deg,#020617,#111827)', padding: 18, borderRadius: 18, marginBottom: 14, border: '1px solid rgba(255,255,255,0.05)', flexWrap: 'wrap' },
   name: { fontSize: 18 },
   email: { color: '#94a3b8', margin: '6px 0' },
@@ -301,11 +330,13 @@ const styles = {
   clientsBox: { background: '#020617', borderRadius: 18, padding: 16, border: '1px solid rgba(56,189,248,0.15)', minHeight: 260 },
   clientsTitle: { marginTop: 0 },
   clientCard: { background: '#07142b', borderRadius: 14, padding: 14, marginBottom: 10 },
+  clientActions: { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 },
   blueButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#38bdf8,#0ea5e9)', color: '#000', fontWeight: 'bold', cursor: 'pointer' },
   greenButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#22c55e,#16a34a)', color: '#000', fontWeight: 'bold', cursor: 'pointer' },
   yellowButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#facc15,#eab308)', color: '#000', fontWeight: 'bold', cursor: 'pointer' },
   redButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#ef4444,#dc2626)', color: '#fff', fontWeight: 'bold', cursor: 'pointer' },
   grayButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: '#334155', color: '#fff', fontWeight: 'bold', cursor: 'pointer' },
+  purpleButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#a855f7,#7e22ce)', color: '#fff', fontWeight: 'bold', cursor: 'pointer' },
   deleteButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#991b1b,#7f1d1d)', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }
 }
 

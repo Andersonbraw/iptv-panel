@@ -1002,8 +1002,8 @@ async function addCreditHistory(resellerId, adminId, type, amount, description) 
 }
 
 async function addResellerSale(resellerId, client, saleType = 'cliente_30_dias') {
-  const saleValue = saleType === 'teste_24h' ? 0 : 25
-  const commission = saleType === 'teste_24h' ? 0 : 10
+  const saleValue = saleType === 'teste_5h' ? 0 : 25
+  const commission = saleType === 'teste_5h' ? 0 : 10
   const profit = Math.max(0, saleValue - commission)
 
   try {
@@ -1032,8 +1032,8 @@ async function addResellerSale(resellerId, client, saleType = 'cliente_30_dias')
         saleValue,
         commission,
         profit,
-        saleType === 'teste_24h'
-          ? 'Teste 24 horas gerado'
+        saleType === 'teste_5h'
+          ? 'Teste 5 horas gerado'
           : 'Cliente premium 30 dias criado'
       ]
     )
@@ -1264,7 +1264,7 @@ app.post('/reseller/clients/create-test', auth, adminOrReseller, async (req, res
         credits,
         reseller_parent_id
       )
-      VALUES ($1,$2,$3,'client','active','teste',1,NOW() + INTERVAL '24 hours',0,$4)
+      VALUES ($1,$2,$3,'client','active','teste',1,NOW() + INTERVAL '5 hours',0,$4)
       RETURNING id, name, email, role, status, plan, max_connections, expires_at, credits, reseller_parent_id
       `,
       [
@@ -1278,7 +1278,7 @@ app.post('/reseller/clients/create-test', auth, adminOrReseller, async (req, res
     await addResellerSale(
       ownerId,
       result.rows[0],
-      'teste_24h'
+      'teste_5h'
     )
 
     res.json({
@@ -1667,6 +1667,125 @@ app.get('/admin/resellers/:id/clients', auth, adminOnly, async (req, res) => {
     })
   }
 })
+
+
+app.patch('/admin/resellers/clients/:id/name', auth, adminOnly, async (req, res) => {
+  try {
+    const { name } = req.body
+
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({
+        error: 'nome obrigatório'
+      })
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET name = $1
+      WHERE id = $2
+        AND role = 'client'
+      RETURNING id, name, email, status, plan, max_connections, expires_at
+      `,
+      [
+        String(name).trim(),
+        req.params.id
+      ]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'cliente não encontrado'
+      })
+    }
+
+    res.json(result.rows[0])
+  } catch (err) {
+    console.log('ERRO ADMIN RENAME CLIENT:', err)
+    res.status(500).json({
+      error: 'erro ao editar nome'
+    })
+  }
+})
+
+app.post('/admin/resellers/clients/:id/reset-password', auth, adminOnly, async (req, res) => {
+  try {
+    const password = generateSimplePassword()
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET password = $1
+      WHERE id = $2
+        AND role = 'client'
+      RETURNING id, name, email
+      `,
+      [
+        password,
+        req.params.id
+      ]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'cliente não encontrado'
+      })
+    }
+
+    res.json({
+      success: true,
+      login: {
+        name: result.rows[0].name,
+        email: result.rows[0].email,
+        password
+      }
+    })
+  } catch (err) {
+    console.log('ERRO ADMIN RESET PASSWORD:', err)
+    res.status(500).json({
+      error: 'erro ao resetar senha'
+    })
+  }
+})
+
+app.patch('/admin/resellers/clients/:id', auth, adminOnly, async (req, res) => {
+  try {
+    const { status, max_connections, expires_at } = req.body
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET
+        status = COALESCE($1, status),
+        max_connections = COALESCE($2, max_connections),
+        expires_at = COALESCE($3, expires_at)
+      WHERE id = $4
+        AND role = 'client'
+      RETURNING id, name, email, status, plan, max_connections, expires_at
+      `,
+      [
+        status,
+        max_connections,
+        expires_at,
+        req.params.id
+      ]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'cliente não encontrado'
+      })
+    }
+
+    res.json(result.rows[0])
+  } catch (err) {
+    console.log('ERRO ADMIN UPDATE CLIENT:', err)
+    res.status(500).json({
+      error: 'erro ao atualizar cliente'
+    })
+  }
+})
+
 
 app.delete('/admin/resellers/:id', auth, adminOnly, async (req, res) => {
   try {
