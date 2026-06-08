@@ -308,15 +308,32 @@ function ClientPanel({
 
   async function loadChannels() {
     try {
-      const res = await axios.get(
-        `${API}/channels?limit=500`,
-        authHeaders
-      )
+      const pageSize = 1000
+      let offset = 0
+      let allChannels = []
+      let keepLoading = true
 
-      setChannels(res.data || [])
+      while (keepLoading) {
+        const res = await axios.get(
+          `${API}/channels?limit=${pageSize}&offset=${offset}`,
+          authHeaders
+        )
 
-      if (res.data?.length > 0 && !selectedChannel) {
-        setSelectedChannel(res.data[0])
+        const data = Array.isArray(res.data) ? res.data : []
+
+        allChannels = [...allChannels, ...data]
+
+        if (data.length < pageSize) {
+          keepLoading = false
+        } else {
+          offset += pageSize
+        }
+      }
+
+      setChannels(allChannels)
+
+      if (allChannels.length > 0 && !selectedChannel) {
+        setSelectedChannel(allChannels[0])
       }
     } catch (err) {
       console.log(err)
@@ -325,12 +342,29 @@ function ClientPanel({
 
   async function loadMovies() {
     try {
-      const res = await axios.get(
-        `${API}/movies`,
-        authHeaders
-      )
+      const pageSize = 1000
+      let offset = 0
+      let allItems = []
+      let keepLoading = true
 
-      setMovies(res.data || [])
+      while (keepLoading) {
+        const res = await axios.get(
+          `${API}/movies?limit=${pageSize}&offset=${offset}`,
+          authHeaders
+        )
+
+        const data = Array.isArray(res.data) ? res.data : []
+
+        allItems = [...allItems, ...data]
+
+        if (data.length < pageSize) {
+          keepLoading = false
+        } else {
+          offset += pageSize
+        }
+      }
+
+      setMovies(allItems)
     } catch (err) {
       console.log(err)
     }
@@ -676,98 +710,116 @@ function ClientPanel({
 
       <main style={styles.main}>
         {page === 'tv' && (
-          <>
-            <div style={styles.top}>
-              <div>
-                <h1 style={styles.title}>
-                  TV ao Vivo
-                </h1>
+          <div style={styles.tvLayout}>
+            <section style={styles.tvListPanel}>
+              <div style={styles.tvListHeader}>
+                <div>
+                  <h1 style={styles.tvTitle}>TV ao Vivo</h1>
 
-                <p style={styles.counter}>
-                  {filteredChannels.length} canais
-                </p>
-              </div>
-
-              <input
-                type='text'
-                placeholder='Buscar canal...'
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                style={styles.input}
-              />
-            </div>
-
-            {selectedChannel && (
-              <section style={styles.hero}>
-                <div style={styles.playerWrap}>
-                  <HlsPlayer
-                    src={proxyStreamUrl(selectedChannel.url)}
-                    style={styles.video}
-                  />
-                </div>
-
-                <div style={styles.infoBox}>
-                  <span style={styles.liveBadge}>
-                    AO VIVO
-                  </span>
-
-                  <h2 style={styles.channelTitle}>
-                    {selectedChannel.name}
-                  </h2>
-
-                  <p style={styles.category}>
-                    {selectedChannel.category || 'TV'}
+                  <p style={styles.tvCounter}>
+                    {filteredChannels.length} canais carregados
                   </p>
                 </div>
-              </section>
-            )}
 
-            <div style={styles.grid}>
-              {filteredChannels.map(channel => (
-                <div
-                  key={channel.id}
-                  {...tvFocusable(
-                    `channel-${channel.id}`,
-                    () => selectChannel(channel)
-                  )}
-                  style={focusStyle(
-                    `channel-${channel.id}`,
-                    selectedChannel?.id === channel.id
-                      ? styles.activeCard
-                      : styles.card
-                  )}
-                  onMouseEnter={e => {
-                    if (selectedChannel?.id !== channel.id) {
-                      e.currentTarget.style.transform = 'scale(1.08)'
-                      e.currentTarget.style.boxShadow =
-                        '0 0 18px rgba(56,189,248,0.35)'
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    if (selectedChannel?.id !== channel.id) {
-                      e.currentTarget.style.transform = 'scale(1)'
-                      e.currentTarget.style.boxShadow = 'none'
-                    }
-                  }}
-                  onClick={() => selectChannel(channel)}
-                >
-                  <img
-                    loading='lazy'
-                    src={channel.logo || PLACEHOLDER}
-                    alt={channel.name}
-                    style={styles.channelLogo}
-                    onError={e => {
-                      e.currentTarget.src = PLACEHOLDER
-                    }}
-                  />
+                <input
+                  type='text'
+                  placeholder='Buscar canal...'
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  style={styles.tvSearchInput}
+                />
+              </div>
 
-                  <div style={styles.channelName}>
-                    {channel.name}
+              <div style={styles.channelList}>
+                {filteredChannels.map((channel, index) => {
+                  const key = `channel-list-${channel.id}`
+
+                  return (
+                    <div
+                      key={channel.id}
+                      {...tvFocusable(key, () => selectChannel(channel))}
+                      style={focusStyle(
+                        key,
+                        selectedChannel?.id === channel.id
+                          ? styles.activeChannelRow
+                          : styles.channelRow
+                      )}
+                      onClick={() => selectChannel(channel)}
+                    >
+                      <div style={styles.channelNumber}>
+                        {index + 1}
+                      </div>
+
+                      <img
+                        loading='lazy'
+                        src={channel.logo || PLACEHOLDER}
+                        alt={channel.name}
+                        style={styles.channelListLogo}
+                        onError={e => {
+                          e.currentTarget.src = PLACEHOLDER
+                        }}
+                      />
+
+                      <div style={styles.channelRowText}>
+                        <strong style={styles.channelRowTitle}>
+                          {channel.name}
+                        </strong>
+
+                        <span style={styles.channelRowSub}>
+                          {channel.category || 'TV'} • ENTER para assistir
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+
+            <section style={styles.tvPlayerPanel}>
+              {selectedChannel ? (
+                <>
+                  <div style={styles.tvPlayerTop}>
+                    <div>
+                      <span style={styles.liveBadge}>AO VIVO</span>
+
+                      <h2 style={styles.tvPlayerTitle}>
+                        {selectedChannel.name}
+                      </h2>
+
+                      <p style={styles.tvPlayerSub}>
+                        {selectedChannel.category || 'TV ao vivo'}
+                      </p>
+                    </div>
+
+                    <button
+                      {...tvFocusable(
+                        'watch-selected-channel',
+                        () => selectChannel(selectedChannel)
+                      )}
+                      style={focusStyle(
+                        'watch-selected-channel',
+                        styles.bigWatchButton
+                      )}
+                      onClick={() => selectChannel(selectedChannel)}
+                    >
+                      Assistir
+                    </button>
                   </div>
+
+                  <div style={styles.playerWrapLarge}>
+                    <HlsPlayer
+                      src={proxyStreamUrl(selectedChannel.url)}
+                      style={styles.videoLarge}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div style={styles.emptyPlayer}>
+                  Escolha um canal na lista
                 </div>
-              ))}
-            </div>
-          </>
+              )}
+            </section>
+          </div>
         )}
 
         {(page === 'movies' || page === 'series') && (
@@ -977,6 +1029,191 @@ function ClientPanel({
 }
 
 const styles = {
+  tvLayout: {
+    display: 'grid',
+    gridTemplateColumns: '420px 1fr',
+    gap: 16,
+    height: 'calc(100vh - 36px)'
+  },
+
+  tvListPanel: {
+    background: 'linear-gradient(180deg,#07142b,#020617)',
+    borderRadius: 22,
+    border: '1px solid rgba(56,189,248,0.16)',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column'
+  },
+
+  tvListHeader: {
+    padding: 16,
+    borderBottom: '1px solid rgba(56,189,248,0.14)'
+  },
+
+  tvTitle: {
+    fontSize: 28,
+    margin: 0,
+    fontWeight: '900'
+  },
+
+  tvCounter: {
+    color: '#94a3b8',
+    margin: '6px 0 14px 0',
+    fontSize: 13
+  },
+
+  tvSearchInput: {
+    width: '100%',
+    boxSizing: 'border-box',
+    padding: 13,
+    borderRadius: 14,
+    border: 'none',
+    background: '#020617',
+    color: '#fff',
+    outline: 'none'
+  },
+
+  channelList: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: 10
+  },
+
+  channelRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    background: '#0b1736',
+    border: '2px solid #111827',
+    borderRadius: 14,
+    padding: 9,
+    marginBottom: 8,
+    cursor: 'pointer',
+    transition: '0.15s ease'
+  },
+
+  activeChannelRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    background: '#0f2a4a',
+    border: '2px solid #38bdf8',
+    borderRadius: 14,
+    padding: 9,
+    marginBottom: 8,
+    cursor: 'pointer',
+    transition: '0.15s ease',
+    boxShadow: '0 0 18px rgba(56,189,248,0.35)'
+  },
+
+  channelNumber: {
+    minWidth: 34,
+    height: 34,
+    borderRadius: 999,
+    background: '#020617',
+    color: '#facc15',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: '900',
+    fontSize: 12
+  },
+
+  channelListLogo: {
+    width: 42,
+    height: 42,
+    objectFit: 'contain',
+    background: '#020617',
+    borderRadius: 10
+  },
+
+  channelRowText: {
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 3
+  },
+
+  channelRowTitle: {
+    color: '#fff',
+    fontSize: 14,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
+  },
+
+  channelRowSub: {
+    color: '#94a3b8',
+    fontSize: 11,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
+  },
+
+  tvPlayerPanel: {
+    background: 'linear-gradient(180deg,#07142b,#000)',
+    borderRadius: 22,
+    border: '1px solid rgba(56,189,248,0.16)',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column'
+  },
+
+  tvPlayerTop: {
+    minHeight: 105,
+    padding: 18,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 20,
+    borderBottom: '1px solid rgba(56,189,248,0.14)'
+  },
+
+  tvPlayerTitle: {
+    fontSize: 28,
+    margin: '12px 0 4px 0'
+  },
+
+  tvPlayerSub: {
+    color: '#38bdf8',
+    margin: 0,
+    fontWeight: 'bold'
+  },
+
+  bigWatchButton: {
+    background: 'linear-gradient(90deg,#38bdf8,#0ea5e9)',
+    color: '#000',
+    border: 'none',
+    borderRadius: 16,
+    padding: '16px 28px',
+    fontWeight: '900',
+    cursor: 'pointer',
+    fontSize: 16
+  },
+
+  playerWrapLarge: {
+    flex: 1,
+    background: '#000'
+  },
+
+  videoLarge: {
+    width: '100%',
+    height: '100%',
+    minHeight: 'calc(100vh - 180px)',
+    objectFit: 'contain',
+    background: '#000'
+  },
+
+  emptyPlayer: {
+    flex: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#94a3b8',
+    fontSize: 24,
+    fontWeight: '900'
+  },
+
   playerLoading: {
     position: 'absolute',
     inset: 0,
