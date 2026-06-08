@@ -172,16 +172,49 @@ function ResellerPanel({ user, logout }) {
     }
   }
 
-  async function addDays(client, days) {
-    const now = new Date()
-    const currentExpire = client.expires_at ? new Date(client.expires_at) : null
-    const baseDate = currentExpire && currentExpire > now ? currentExpire : now
+  async function renewClient(client) {
+    if (!confirm('Renovar este cliente por 30 dias? Será descontado 1 crédito.')) return
 
-    baseDate.setDate(baseDate.getDate() + days)
+    try {
+      setLoading(true)
 
-    await updateClient(client, {
-      expires_at: baseDate.toISOString()
-    })
+      await axios.post(
+        `${API}/reseller/clients/${client.id}/renew-30-days`,
+        {},
+        { headers }
+      )
+
+      await loadDashboard()
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erro ao renovar cliente')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function exportClientsCSV() {
+    const rows = [
+      ['Nome', 'Email', 'Plano', 'Status', 'Conexoes', 'Vencimento'],
+      ...clients.map(client => [
+        client.name,
+        client.email,
+        client.plan,
+        client.status,
+        client.max_connections || 1,
+        client.expires_at ? new Date(client.expires_at).toLocaleString('pt-BR') : ''
+      ])
+    ]
+
+    const csv = rows.map(row => row.join(';')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+
+    link.href = url
+    link.download = 'meus-clientes.csv'
+    link.click()
+
+    URL.revokeObjectURL(url)
   }
 
   async function deleteClient(client) {
@@ -241,7 +274,7 @@ Senha: ${createdLogin.password}
         <div style={styles.topBar}>
           <div>
             <h1 style={styles.title}>Painel Revendedor</h1>
-            <p style={styles.subtitle}>Clientes, teste 5 horas, créditos, vendas e lucro. Cada cliente 30 dias vale R$ 8,00.</p>
+            <p style={styles.subtitle}>Clientes, teste 5 horas, créditos, vendas, comissões e lucro.</p>
           </div>
         </div>
 
@@ -276,6 +309,8 @@ Senha: ${createdLogin.password}
             Gerar teste 5 horas
           </button>
 
+          <button style={styles.greenButton} onClick={exportClientsCSV}>Exportar clientes CSV</button>
+
           <button style={styles.grayButton} onClick={loadDashboard}>Atualizar</button>
         </div>
 
@@ -298,6 +333,8 @@ Senha: ${createdLogin.password}
           <div style={styles.cardPurple}><h1>{money(finance.vendas)}</h1><p>Vendas</p></div>
           <div style={styles.cardYellow}><h1>{money(finance.comissoes)}</h1><p>Comissão</p></div>
           <div style={styles.cardCyan}><h1>{money(finance.lucro)}</h1><p>Lucro</p></div>
+          <div style={styles.cardRed}><h1>{clients.filter(c => c.expires_at && new Date(c.expires_at).getTime() < Date.now()).length}</h1><p>Vencidos</p></div>
+          <div style={styles.cardPurple}><h1>{clients.filter(c => c.plan === 'teste').length}</h1><p>Testes</p></div>
         </div>
 
         <h2 style={styles.sectionTitle}>Clientes criados</h2>
@@ -324,7 +361,7 @@ Senha: ${createdLogin.password}
               <button style={styles.purpleButton} onClick={() => resetPassword(client)}>Resetar senha</button>
               <button style={styles.grayButton} onClick={() => updateClient(client, { max_connections: 1 })}>1 conexão</button>
               <button style={styles.grayButton} onClick={() => updateClient(client, { max_connections: 2 })}>2 conexões</button>
-              <button style={styles.yellowButton} onClick={() => addDays(client, 30)}>+30 dias</button>
+              <button style={styles.yellowButton} onClick={() => renewClient(client)}>Renovar 30 dias</button>
               <button style={styles.deleteButton} onClick={() => deleteClient(client)}>Excluir</button>
             </div>
           </div>

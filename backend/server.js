@@ -1450,6 +1450,100 @@ app.patch('/reseller/clients/:id', auth, adminOrReseller, async (req, res) => {
   }
 })
 
+
+app.post('/reseller/clients/:id/renew-30-days', auth, adminOrReseller, async (req, res) => {
+  try {
+    const ownerId = req.user.id
+
+    const ownerResult = await pool.query(
+      `
+      SELECT id, credits, status
+      FROM users
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [ownerId]
+    )
+
+    const owner = ownerResult.rows[0]
+
+    if (!owner || owner.status !== 'active') {
+      return res.status(403).json({
+        error: 'revendedor bloqueado'
+      })
+    }
+
+    if (Number(owner.credits || 0) <= 0) {
+      return res.status(400).json({
+        error: 'sem créditos disponíveis'
+      })
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET
+        plan = 'premium',
+        status = 'active',
+        expires_at =
+          CASE
+            WHEN expires_at IS NULL OR expires_at < NOW()
+            THEN NOW() + INTERVAL '30 days'
+            ELSE expires_at + INTERVAL '30 days'
+          END
+      WHERE id = $1
+        AND reseller_parent_id = $2
+        AND role = 'client'
+      RETURNING id, name, email, role, status, plan, max_connections, expires_at
+      `,
+      [
+        req.params.id,
+        ownerId
+      ]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'cliente não encontrado'
+      })
+    }
+
+    await pool.query(
+      `
+      UPDATE users
+      SET credits = GREATEST(credits - 1, 0)
+      WHERE id = $1
+      `,
+      [ownerId]
+    )
+
+    await addCreditHistory(
+      ownerId,
+      null,
+      'saida',
+      -1,
+      'Cliente renovado por 30 dias'
+    )
+
+    await addResellerSale(
+      ownerId,
+      result.rows[0],
+      'cliente_30_dias'
+    )
+
+    res.json({
+      success: true,
+      user: result.rows[0]
+    })
+  } catch (err) {
+    console.log('ERRO RENEW CLIENT:', err)
+    res.status(500).json({
+      error: 'erro ao renovar cliente'
+    })
+  }
+})
+
+
 app.delete('/reseller/clients/:id', auth, adminOrReseller, async (req, res) => {
   try {
     const result = await pool.query(
@@ -1808,6 +1902,44 @@ app.patch('/admin/resellers/clients/:id', auth, adminOnly, async (req, res) => {
     console.log('ERRO ADMIN UPDATE CLIENT:', err)
     res.status(500).json({
       error: 'erro ao atualizar cliente'
+    })
+  }
+})
+
+
+
+app.patch('/admin/resellers/clients/:id/renew-30-days', auth, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET
+        plan = 'premium',
+        status = 'active',
+        expires_at =
+          CASE
+            WHEN expires_at IS NULL OR expires_at < NOW()
+            THEN NOW() + INTERVAL '30 days'
+            ELSE expires_at + INTERVAL '30 days'
+          END
+      WHERE id = $1
+        AND role = 'client'
+      RETURNING id, name, email, status, plan, max_connections, expires_at
+      `,
+      [req.params.id]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'cliente não encontrado'
+      })
+    }
+
+    res.json(result.rows[0])
+  } catch (err) {
+    console.log('ERRO ADMIN RENEW CLIENT:', err)
+    res.status(500).json({
+      error: 'erro ao renovar cliente'
     })
   }
 })
@@ -3540,9 +3672,10 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
   }
 })
 
+
 app.get('/admin/reports/resellers', auth, adminOnly, async (req, res) => {
   try {
-    const [summaryResult, monthResult, creditResult] = await Promise.all([
+    const [summaryResult, monthResult, creditResult, topMonthResult, todayResult, testsResult] = await Promise.all([
       pool.query(
         `
         SELECT
@@ -3550,7 +3683,12 @@ app.get('/admin/reports/resellers', auth, adminOnly, async (req, res) => {
           r.name,
           r.email,
           r.credits,
+          r.status,
           COUNT(DISTINCT c.id)::INTEGER AS clients_count,
+          COUNT(DISTINCT CASE WHEN c.status = 'active' THEN c.id END)::INTEGER AS active_clients,
+          COUNT(DISTINCT CASE WHEN c.status = 'blocked' THEN c.id END)::INTEGER AS blocked_clients,
+          COUNT(DISTINCT CASE WHEN c.plan = 'teste' THEN c.id END)::INTEGER AS test_clients,
+          COUNT(DISTINCT CASE WHEN c.expires_at IS NOT NULL AND c.expires_at < NOW() THEN c.id END)::INTEGER AS expired_clients,
           COALESCE(SUM(s.sale_value),0)::NUMERIC AS vendas,
           COALESCE(SUM(s.commission),0)::NUMERIC AS comissoes,
           COALESCE(SUM(s.profit),0)::NUMERIC AS lucro
@@ -3589,7 +3727,43 @@ app.get('/admin/reports/resellers', auth, adminOnly, async (req, res) => {
         ORDER BY h.id DESC
         LIMIT 100
         `
-      )
+      ),
+      pool.query(
+        `
+        SELECT
+          r.id,
+          r.name,
+          r.email,
+          COALESCE(SUM(s.sale_value),0)::NUMERIC AS vendas_mes,
+          COALESCE(SUM(s.profit),0)::NUMERIC AS lucro_mes,
+          COUNT(s.id)::INTEGER AS vendas_count
+        FROM users r
+        LEFT JOIN reseller_sales s
+          ON s.reseller_id = r.id
+          AND DATE_TRUNC('month', s.created_at) = DATE_TRUNC('month', NOW())
+        WHERE r.role = 'reseller'
+        GROUP BY r.id
+        ORDER BY lucro_mes DESC
+        LIMIT 10
+        `
+      ),
+      pool.query(
+        `
+        SELECT
+          COALESCE(SUM(sale_value),0)::NUMERIC AS vendas_hoje,
+          COALESCE(SUM(profit),0)::NUMERIC AS lucro_hoje,
+          COUNT(*)::INTEGER AS total_hoje
+        FROM reseller_sales
+        WHERE created_at::DATE = NOW()::DATE
+        `
+      ),
+      pool.query(
+        `
+        SELECT COUNT(*)::INTEGER AS total_testes
+        FROM users
+        WHERE role = 'client'
+          AND plan = 'teste'
+      `)
     ])
 
     const totals = summaryResult.rows.reduce(
@@ -3598,19 +3772,30 @@ app.get('/admin/reports/resellers', auth, adminOnly, async (req, res) => {
         acc.comissoes += Number(item.comissoes || 0)
         acc.lucro += Number(item.lucro || 0)
         acc.clients += Number(item.clients_count || 0)
+        acc.active += Number(item.active_clients || 0)
+        acc.blocked += Number(item.blocked_clients || 0)
+        acc.expired += Number(item.expired_clients || 0)
+        acc.tests += Number(item.test_clients || 0)
         return acc
       },
       {
         vendas: 0,
         comissoes: 0,
         lucro: 0,
-        clients: 0
+        clients: 0,
+        active: 0,
+        blocked: 0,
+        expired: 0,
+        tests: 0
       }
     )
 
     res.json({
       totals,
+      today: todayResult.rows[0] || {},
+      tests: testsResult.rows[0] || {},
       resellers: summaryResult.rows,
+      topMonth: topMonthResult.rows,
       monthly: monthResult.rows,
       creditHistory: creditResult.rows
     })

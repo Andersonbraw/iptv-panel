@@ -196,16 +196,22 @@ function AdminResellers() {
     }
   }
 
-  async function addDays(client, days) {
-    const now = new Date()
-    const currentExpire = client.expires_at ? new Date(client.expires_at) : null
-    const baseDate = currentExpire && currentExpire > now ? currentExpire : now
+  async function renewClient(client) {
+    try {
+      setLoading(true)
 
-    baseDate.setDate(baseDate.getDate() + days)
+      await axios.patch(
+        `${API}/admin/resellers/clients/${client.id}/renew-30-days`,
+        {},
+        { headers }
+      )
 
-    await updateClient(client, {
-      expires_at: baseDate.toISOString()
-    })
+      if (selectedReseller) await loadClients(selectedReseller)
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erro ao renovar cliente')
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function deleteReseller(reseller) {
@@ -390,8 +396,8 @@ Senha: ${createdLogin.password}
                   2 conexões
                 </button>
 
-                <button style={styles.yellowButton} onClick={() => addDays(client, 30)}>
-                  +30 dias
+                <button style={styles.yellowButton} onClick={() => renewClient(client)}>
+                  Renovar 30 dias
                 </button>
               </div>
             </div>

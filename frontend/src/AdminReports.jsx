@@ -13,7 +13,9 @@ function money(value) {
 function AdminReports() {
   const [data, setData] = useState({
     totals: {},
+    today: {},
     resellers: [],
+    topMonth: [],
     monthly: [],
     creditHistory: []
   })
@@ -46,6 +48,34 @@ function AdminReports() {
     }
   }
 
+  function exportCSV() {
+    const rows = [
+      ['Revendedor', 'Email', 'Clientes', 'Ativos', 'Vencidos', 'Testes', 'Créditos', 'Vendas', 'Lucro'],
+      ...(data.resellers || []).map(item => [
+        item.name,
+        item.email,
+        item.clients_count || 0,
+        item.active_clients || 0,
+        item.expired_clients || 0,
+        item.test_clients || 0,
+        item.credits || 0,
+        item.vendas || 0,
+        item.lucro || 0
+      ])
+    ]
+
+    const csv = rows.map(row => row.join(';')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+
+    link.href = url
+    link.download = 'relatorio-revendedores.csv'
+    link.click()
+
+    URL.revokeObjectURL(url)
+  }
+
   useEffect(() => {
     loadReports()
   }, [])
@@ -56,59 +86,64 @@ function AdminReports() {
         <div>
           <h1 style={styles.title}>Relatórios Financeiros</h1>
           <p style={styles.subtitle}>
-            Vendas, lucro mensal e créditos dos revendedores. Cada cliente 30 dias vale R$ 8,00.
+            Cada cliente 30 dias vale R$ 8,00. Teste 5 horas não soma venda.
           </p>
         </div>
 
-        <button style={styles.blueButton} onClick={loadReports}>
-          Atualizar
-        </button>
+        <div style={styles.headerActions}>
+          <button style={styles.greenButton} onClick={exportCSV}>
+            Exportar CSV
+          </button>
+
+          <button style={styles.blueButton} onClick={loadReports}>
+            Atualizar
+          </button>
+        </div>
       </div>
 
       {loading && <div style={styles.loading}>Carregando relatórios...</div>}
 
-      {error && (
-        <div style={styles.errorBox}>
-          {error}
-        </div>
-      )}
+      {error && <div style={styles.errorBox}>{error}</div>}
 
       <div style={styles.statsGrid}>
-        <div style={styles.cardBlue}>
-          <h1>{money(data.totals?.vendas)}</h1>
-          <p>Vendas totais</p>
-        </div>
+        <div style={styles.cardBlue}><h1>{money(data.totals?.vendas)}</h1><p>Vendas totais</p></div>
+        <div style={styles.cardGreen}><h1>{money(data.totals?.lucro)}</h1><p>Lucro líquido</p></div>
+        <div style={styles.cardCyan}><h1>{money(data.today?.vendas_hoje)}</h1><p>Faturamento hoje</p></div>
+        <div style={styles.cardPurple}><h1>{data.totals?.clients || 0}</h1><p>Clientes de revendedores</p></div>
+        <div style={styles.cardYellow}><h1>{data.totals?.active || 0}</h1><p>Clientes ativos</p></div>
+        <div style={styles.cardRed}><h1>{data.totals?.expired || 0}</h1><p>Clientes vencidos</p></div>
+        <div style={styles.cardTest}><h1>{data.totals?.tests || 0}</h1><p>Clientes teste</p></div>
+      </div>
 
-        <div style={styles.cardYellow}>
-          <h1>{money(data.totals?.comissoes)}</h1>
-          <p>Comissões</p>
-        </div>
+      <h2>Ranking de Revendedores</h2>
 
-        <div style={styles.cardGreen}>
-          <h1>{money(data.totals?.lucro)}</h1>
-          <p>Lucro líquido</p>
-        </div>
-
-        <div style={styles.cardPurple}>
-          <h1>{data.totals?.clients || 0}</h1>
-          <p>Clientes de revendedores</p>
-        </div>
+      <div style={styles.table}>
+        {(data.topMonth || []).map((item, index) => (
+          <div key={item.id} style={styles.row}>
+            <strong>#{index + 1} {item.name}</strong>
+            <span>Vendas mês: {money(item.vendas_mes)}</span>
+            <span>Lucro mês: {money(item.lucro_mes)}</span>
+            <span>Vendas: {item.vendas_count || 0}</span>
+          </div>
+        ))}
       </div>
 
       <h2>Vendas por Revendedor</h2>
 
       <div style={styles.table}>
         {(data.resellers || []).map(item => (
-          <div key={item.id} style={styles.row}>
+          <div key={item.id} style={styles.rowLarge}>
             <div>
               <strong>{item.name}</strong>
               <p style={styles.muted}>{item.email}</p>
             </div>
 
             <span>Clientes: {item.clients_count || 0}</span>
+            <span>Ativos: {item.active_clients || 0}</span>
+            <span>Vencidos: {item.expired_clients || 0}</span>
+            <span>Testes: {item.test_clients || 0}</span>
             <span>Créditos: {item.credits || 0}</span>
             <span>Vendas: {money(item.vendas)}</span>
-            <span>Comissão: {money(item.comissoes)}</span>
             <span>Lucro: {money(item.lucro)}</span>
           </div>
         ))}
@@ -129,7 +164,6 @@ function AdminReports() {
             </strong>
 
             <span>Vendas: {money(item.vendas)}</span>
-            <span>Comissões: {money(item.comissoes)}</span>
             <span>Lucro: {money(item.lucro)}</span>
             <span>Total: {item.total_vendas || 0}</span>
           </div>
@@ -174,109 +208,27 @@ const cardBase = {
 }
 
 const styles = {
-  box: {
-    background: 'linear-gradient(180deg,#07142b,#020617)',
-    padding: 22,
-    borderRadius: 24
-  },
-
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    gap: 20,
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    marginBottom: 20
-  },
-
-  title: {
-    margin: 0,
-    fontSize: 38
-  },
-
-  subtitle: {
-    color: '#94a3b8'
-  },
-
-  loading: {
-    background: '#020617',
-    border: '1px solid #12345f',
-    padding: 14,
-    borderRadius: 14,
-    marginBottom: 20,
-    color: '#38bdf8',
-    fontWeight: 'bold'
-  },
-
-  errorBox: {
-    background: '#450a0a',
-    border: '1px solid #ef4444',
-    padding: 14,
-    borderRadius: 14,
-    marginBottom: 20,
-    color: '#fff',
-    fontWeight: 'bold'
-  },
-
-  statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))',
-    gap: 18,
-    marginBottom: 24
-  },
-
-  cardBlue: {
-    ...cardBase,
-    background: 'linear-gradient(180deg,#0f172a,#111827)'
-  },
-
-  cardYellow: {
-    ...cardBase,
-    background: 'linear-gradient(180deg,#713f12,#a16207)'
-  },
-
-  cardGreen: {
-    ...cardBase,
-    background: 'linear-gradient(180deg,#052e16,#14532d)'
-  },
-
-  cardPurple: {
-    ...cardBase,
-    background: 'linear-gradient(180deg,#3b0764,#581c87)'
-  },
-
-  table: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 10,
-    marginBottom: 28
-  },
-
-  row: {
-    background: '#020617',
-    border: '1px solid rgba(56,189,248,0.15)',
-    borderRadius: 14,
-    padding: 14,
-    display: 'grid',
-    gridTemplateColumns: '2fr repeat(5, 1fr)',
-    gap: 10,
-    alignItems: 'center'
-  },
-
-  muted: {
-    color: '#94a3b8',
-    margin: '4px 0 0'
-  },
-
-  blueButton: {
-    padding: '12px 16px',
-    border: 'none',
-    borderRadius: 12,
-    background: 'linear-gradient(90deg,#38bdf8,#0ea5e9)',
-    color: '#000',
-    fontWeight: 'bold',
-    cursor: 'pointer'
-  }
+  box: { background: 'linear-gradient(180deg,#07142b,#020617)', padding: 22, borderRadius: 24 },
+  header: { display: 'flex', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap', alignItems: 'center', marginBottom: 20 },
+  headerActions: { display: 'flex', gap: 10, flexWrap: 'wrap' },
+  title: { margin: 0, fontSize: 38 },
+  subtitle: { color: '#94a3b8' },
+  loading: { background: '#020617', border: '1px solid #12345f', padding: 14, borderRadius: 14, marginBottom: 20, color: '#38bdf8', fontWeight: 'bold' },
+  errorBox: { background: '#450a0a', border: '1px solid #ef4444', padding: 14, borderRadius: 14, marginBottom: 20, color: '#fff', fontWeight: 'bold' },
+  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 18, marginBottom: 24 },
+  cardBlue: { ...cardBase, background: 'linear-gradient(180deg,#0f172a,#111827)' },
+  cardGreen: { ...cardBase, background: 'linear-gradient(180deg,#052e16,#14532d)' },
+  cardCyan: { ...cardBase, background: 'linear-gradient(180deg,#083344,#155e75)' },
+  cardPurple: { ...cardBase, background: 'linear-gradient(180deg,#3b0764,#581c87)' },
+  cardYellow: { ...cardBase, background: 'linear-gradient(180deg,#713f12,#a16207)' },
+  cardRed: { ...cardBase, background: 'linear-gradient(180deg,#450a0a,#7f1d1d)' },
+  cardTest: { ...cardBase, background: 'linear-gradient(180deg,#312e81,#1e1b4b)' },
+  table: { display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 },
+  row: { background: '#020617', border: '1px solid rgba(56,189,248,0.15)', borderRadius: 14, padding: 14, display: 'grid', gridTemplateColumns: '2fr repeat(3, 1fr)', gap: 10, alignItems: 'center' },
+  rowLarge: { background: '#020617', border: '1px solid rgba(56,189,248,0.15)', borderRadius: 14, padding: 14, display: 'grid', gridTemplateColumns: '2fr repeat(7, 1fr)', gap: 10, alignItems: 'center' },
+  muted: { color: '#94a3b8', margin: '4px 0 0' },
+  blueButton: { padding: '12px 16px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#38bdf8,#0ea5e9)', color: '#000', fontWeight: 'bold', cursor: 'pointer' },
+  greenButton: { padding: '12px 16px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#22c55e,#16a34a)', color: '#000', fontWeight: 'bold', cursor: 'pointer' }
 }
 
 export default AdminReports
