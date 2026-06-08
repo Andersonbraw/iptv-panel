@@ -3909,7 +3909,19 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
       params.set('password', password)
 
       if (action) {
-        params.set('action', action)
+        if (String(action).includes('&')) {
+          const [mainAction, ...rest] = String(action).split('&')
+          params.set('action', mainAction)
+
+          for (const part of rest) {
+            const [key, value] = part.split('=')
+            if (key && value !== undefined) {
+              params.set(key, value)
+            }
+          }
+        } else {
+          params.set('action', action)
+        }
       }
 
       return `${server}/player_api.php?${params.toString()}`
@@ -4075,51 +4087,87 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
           continue
         }
 
-        const streamUrl = `${server}/series/${username}/${password}/${item.series_id}.m3u8`
+        const info = await getJson(makeApiUrl(`get_series_info&series_id=${item.series_id}`))
+        const episodesObj = info?.episodes || {}
+        const seriesTitle = item.name || info?.info?.name || 'Série'
+        const seriesCover = item.cover || info?.info?.cover || ''
 
-        const exists = await pool.query(
-          `
-          SELECT id
-          FROM movies
-          WHERE title = $1
-          AND category = 'Series'
-          LIMIT 1
-          `,
-          [item.name || 'Série']
-        )
+        let insertedEpisodes = 0
 
-        if (exists.rows.length > 0) {
-          skipped++
-          continue
+        for (const seasonKey of Object.keys(episodesObj)) {
+          const seasonEpisodes = Array.isArray(episodesObj[seasonKey])
+            ? episodesObj[seasonKey]
+            : []
+
+          for (const ep of seasonEpisodes) {
+            try {
+              if (!ep.id) {
+                skipped++
+                continue
+              }
+
+              const seasonNumber = Number(seasonKey || ep.season || 1)
+              const episodeNumber = Number(ep.episode_num || ep.episode || 1)
+              const ext = ep.container_extension || 'mp4'
+              const episodeTitle = ep.title || `Episódio ${episodeNumber}`
+
+              const streamUrl = `${server}/series/${username}/${password}/${ep.id}.${ext}`
+
+              const exists = await pool.query(
+                `
+                SELECT id
+                FROM movies
+                WHERE video = $1
+                LIMIT 1
+                `,
+                [streamUrl]
+              )
+
+              if (exists.rows.length > 0) {
+                skipped++
+                continue
+              }
+
+              const fullTitle = `${seriesTitle} S${String(seasonNumber).padStart(2, '0')}E${String(episodeNumber).padStart(2, '0')} - ${episodeTitle}`
+
+              await pool.query(
+                `
+                INSERT INTO movies
+                (
+                  title,
+                  year,
+                  category,
+                  image,
+                  banner,
+                  video,
+                  description
+                )
+                VALUES ($1,$2,$3,$4,$5,$6,$7)
+                `,
+                [
+                  fullTitle,
+                  item.year || '',
+                  'Series',
+                  ep.info?.movie_image || seriesCover || '',
+                  seriesCover || ep.info?.movie_image || '',
+                  streamUrl,
+                  item.plot || info?.info?.plot || 'Episódio importado via Xtream'
+                ]
+              )
+
+              insertedEpisodes++
+              series++
+            } catch (episodeErr) {
+              skipped++
+            }
+          }
         }
 
-        await pool.query(
-          `
-          INSERT INTO movies
-          (
-            title,
-            year,
-            category,
-            image,
-            banner,
-            video,
-            description
-          )
-          VALUES ($1,$2,$3,$4,$5,$6,$7)
-          `,
-          [
-            item.name || 'Série',
-            item.year || '',
-            'Series',
-            item.cover || '',
-            item.cover || '',
-            streamUrl,
-            item.plot || 'Importado via Xtream'
-          ]
-        )
-
-        series++
+        if (insertedEpisodes === 0) {
+          skipped++
+        }
       } catch (err) {
+        console.log('ERRO IMPORT SERIES:', err.message)
         skipped++
       }
     }

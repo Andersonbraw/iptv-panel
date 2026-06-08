@@ -155,6 +155,7 @@ function ClientPanel({
 }) {
   const [channels, setChannels] = useState([])
   const [movies, setMovies] = useState([])
+  const [seriesItems, setSeriesItems] = useState([])
   const [selectedChannel, setSelectedChannel] = useState(null)
   const [selectedStream, setSelectedStream] = useState(null)
   const [playerOpen, setPlayerOpen] = useState(false)
@@ -370,13 +371,44 @@ function ClientPanel({
     }
   }
 
+  async function loadSeries() {
+    try {
+      const pageSize = 1000
+      let offset = 0
+      let allItems = []
+      let keepLoading = true
+
+      while (keepLoading) {
+        const res = await axios.get(
+          `${API}/series?limit=${pageSize}&offset=${offset}`,
+          authHeaders
+        )
+
+        const data = Array.isArray(res.data) ? res.data : []
+
+        allItems = [...allItems, ...data]
+
+        if (data.length < pageSize) {
+          keepLoading = false
+        } else {
+          offset += pageSize
+        }
+      }
+
+      setSeriesItems(allItems)
+    } catch (err) {
+      console.log(err)
+    }
+  }
+
   async function loadData() {
     try {
       setLoading(true)
 
       await Promise.all([
         loadChannels(),
-        loadMovies()
+        loadMovies(),
+        loadSeries()
       ])
     } finally {
       setLoading(false)
@@ -470,7 +502,7 @@ function ClientPanel({
   }, [movies])
 
   const onlySeries = useMemo(() => {
-    return movies.filter(item => {
+    return seriesItems.filter(item => {
       const category = normalize(item.category || '')
 
       return (
@@ -478,36 +510,20 @@ function ClientPanel({
         category.includes('séries')
       )
     })
-  }, [movies])
+  }, [seriesItems])
 
   const filteredMovies = useMemo(() => {
-    const grouped = {}
+    return onlyMovies
+      .filter(movie => {
+        const originalTitle = movie.title || ''
 
-    onlyMovies.forEach(movie => {
-      const originalTitle = movie.title || ''
-      const cleanTitle = cleanGroupTitle(originalTitle)
-      const normalizedTitle = normalize(cleanTitle || originalTitle)
-
-      const matchesSearch =
-        normalizedTitle.includes(normalize(movieSearch)) ||
-        normalize(originalTitle).includes(normalize(movieSearch))
-
-      if (!matchesSearch) return
-
-      if (!grouped[normalizedTitle]) {
-        grouped[normalizedTitle] = {
-          ...movie,
-          title: cleanTitle || originalTitle,
-          episodes: 1,
-          episodeList: [movie]
-        }
-      } else {
-        grouped[normalizedTitle].episodes++
-        grouped[normalizedTitle].episodeList.push(movie)
-      }
-    })
-
-    return Object.values(grouped)
+        return normalize(originalTitle).includes(normalize(movieSearch))
+      })
+      .map(movie => ({
+        ...movie,
+        episodes: 1,
+        episodeList: [movie]
+      }))
   }, [onlyMovies, movieSearch])
 
   const filteredSeries = useMemo(() => {
@@ -613,6 +629,11 @@ function ClientPanel({
   }
 
   function chooseEpisode(item) {
+    if (page === 'movies') {
+      openPlayer(item)
+      return
+    }
+
     if (item.episodeList && item.episodeList.length > 1) {
       const firstSeason = item.episodeList[0]?.season || '1'
 
@@ -885,7 +906,7 @@ function ClientPanel({
                   }}
                   onClick={() => chooseEpisode(item)}
                 >
-                  {item.episodes > 1 && (
+                  {page === 'series' && item.episodes > 1 && (
                     <div style={styles.episodeBadge}>
                       {item.episodes} episódios
                     </div>
@@ -923,7 +944,7 @@ function ClientPanel({
                         chooseEpisode(item)
                       }}
                     >
-                      {item.episodes > 1
+                      {page === 'series' && item.episodes > 1
                         ? 'Episódios'
                         : 'Assistir'}
                     </button>
