@@ -5,6 +5,7 @@ import pg from 'pg'
 import dotenv from 'dotenv'
 import crypto from 'crypto'
 import { XMLParser } from 'fast-xml-parser'
+import { Readable } from 'stream'
 
 dotenv.config()
 
@@ -2660,41 +2661,17 @@ app.get('/admin/stats', auth, adminOnly, async (req, res) => {
         FROM channels
       `),
       pool.query(`
-        WITH cleaned AS (
-          SELECT
-            LOWER(
-              REGEXP_REPLACE(
-                REGEXP_REPLACE(
-                  REGEXP_REPLACE(
-                    COALESCE(title, ''),
-                    '\\[[^\\]]*\\]',
-                    '',
-                    'g'
-                  ),
-                  '\\([^\\)]*\\)',
-                  '',
-                  'g'
-                ),
-                '\\s+',
-                ' ',
-                'g'
-              )
-            ) AS clean_title
-          FROM movies
-          WHERE
-            LOWER(COALESCE(category, '')) NOT LIKE '%series%'
-            AND LOWER(COALESCE(category, '')) NOT LIKE '%séries%'
-            AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
-            AND LOWER(COALESCE(title, '')) NOT LIKE '%temporada%'
-            AND LOWER(COALESCE(title, '')) NOT LIKE '%episodio%'
-            AND LOWER(COALESCE(title, '')) NOT LIKE '%episódio%'
-            AND LOWER(COALESCE(title, '')) NOT LIKE '%capitulo%'
-            AND LOWER(COALESCE(title, '')) NOT LIKE '%capítulo%'
-            AND LOWER(COALESCE(title, '')) !~ 's[0-9]{1,2}e[0-9]{1,3}'
-            AND LOWER(COALESCE(title, '')) !~ '[0-9]{1,2}x[0-9]{1,3}'
-        )
-        SELECT COUNT(DISTINCT clean_title)::INTEGER AS total
-        FROM cleaned
+        SELECT COUNT(*)::INTEGER AS total
+        FROM movies
+        WHERE
+          LOWER(COALESCE(category, '')) NOT LIKE '%series%'
+          AND LOWER(COALESCE(category, '')) NOT LIKE '%séries%'
+          AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%temporada%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%episodio%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%episódio%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%capitulo%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%capítulo%'
       `),
       pool.query(`
         SELECT COUNT(*)::INTEGER AS total
@@ -3235,75 +3212,26 @@ app.get('/movies', auth, async (req, res) => {
     const result =
       await pool.query(
         `
-        WITH cleaned AS (
-          SELECT
-            id,
-            title,
-            year,
-            category,
-            image,
-            banner,
-            video,
-            description,
-            created_at,
-            LOWER(
-              REGEXP_REPLACE(
-                REGEXP_REPLACE(
-                  REGEXP_REPLACE(
-                    COALESCE(title, ''),
-                    '\\[[^\\]]*\\]',
-                    '',
-                    'g'
-                  ),
-                  '\\([^\\)]*\\)',
-                  '',
-                  'g'
-                ),
-                '\\s+',
-                ' ',
-                'g'
-              )
-            ) AS clean_title
-          FROM movies
-          WHERE
-            LOWER(COALESCE(category, '')) NOT LIKE '%series%'
-            AND LOWER(COALESCE(category, '')) NOT LIKE '%séries%'
-            AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
-            AND LOWER(COALESCE(title, '')) NOT LIKE '%temporada%'
-            AND LOWER(COALESCE(title, '')) NOT LIKE '%episodio%'
-            AND LOWER(COALESCE(title, '')) NOT LIKE '%episódio%'
-            AND LOWER(COALESCE(title, '')) NOT LIKE '%capitulo%'
-            AND LOWER(COALESCE(title, '')) NOT LIKE '%capítulo%'
-            AND LOWER(COALESCE(title, '')) !~ 's[0-9]{1,2}e[0-9]{1,3}'
-            AND LOWER(COALESCE(title, '')) !~ '[0-9]{1,2}x[0-9]{1,3}'
-            AND LOWER(COALESCE(title, '')) !~ 't[0-9]{1,2}[[:space:]]*e[0-9]{1,3}'
-        ),
-        ranked AS (
-          SELECT
-            *,
-            ROW_NUMBER() OVER (
-              PARTITION BY clean_title
-              ORDER BY
-                CASE
-                  WHEN image IS NOT NULL AND image <> '' THEN 0
-                  ELSE 1
-                END,
-                id DESC
-            ) AS rn
-          FROM cleaned
-        )
         SELECT
           id,
           title,
           year,
-          'Filmes' AS category,
+          category,
           image,
           banner,
           video,
           description,
           created_at
-        FROM ranked
-        WHERE rn = 1
+        FROM movies
+        WHERE
+          LOWER(COALESCE(category, '')) NOT LIKE '%series%'
+          AND LOWER(COALESCE(category, '')) NOT LIKE '%séries%'
+          AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%temporada%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%episodio%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%episódio%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%capitulo%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%capítulo%'
         ORDER BY id DESC
         LIMIT $1 OFFSET $2
         `,
@@ -3867,58 +3795,6 @@ app.post('/admin/fix-series-categories', auth, adminOnly, async (req, res) => {
 })
 
 
-
-app.post('/admin/fix-movies-series-view', auth, adminOnly, async (req, res) => {
-  try {
-    const result = await pool.query(`
-      UPDATE movies
-      SET category = 'Series'
-      WHERE
-        category <> 'Series'
-        AND (
-          LOWER(COALESCE(video, '')) LIKE '%/series/%'
-          OR LOWER(COALESCE(description, '')) LIKE '%série%'
-          OR LOWER(COALESCE(description, '')) LIKE '%serie%'
-          OR LOWER(COALESCE(description, '')) LIKE '%series%'
-          OR LOWER(COALESCE(description, '')) LIKE '%temporada%'
-          OR LOWER(COALESCE(description, '')) LIKE '%episodio%'
-          OR LOWER(COALESCE(description, '')) LIKE '%episódio%'
-          OR LOWER(COALESCE(description, '')) LIKE '%capítulo%'
-          OR LOWER(COALESCE(description, '')) LIKE '%capitulo%'
-          OR LOWER(COALESCE(title, '')) LIKE '%temporada%'
-          OR LOWER(COALESCE(title, '')) LIKE '%episodio%'
-          OR LOWER(COALESCE(title, '')) LIKE '%episódio%'
-          OR LOWER(COALESCE(title, '')) LIKE '%capítulo%'
-          OR LOWER(COALESCE(title, '')) LIKE '%capitulo%'
-          OR LOWER(COALESCE(title, '')) ~ 's[0-9]{1,2}e[0-9]{1,3}'
-          OR LOWER(COALESCE(title, '')) ~ '[0-9]{1,2}x[0-9]{1,3}'
-          OR LOWER(COALESCE(title, '')) ~ 't[0-9]{1,2}[[:space:]]*e[0-9]{1,3}'
-        )
-      RETURNING id
-    `)
-
-    const counts = await pool.query(`
-      SELECT category, COUNT(*)::INTEGER AS total
-      FROM movies
-      GROUP BY category
-      ORDER BY total DESC
-    `)
-
-    res.json({
-      success: true,
-      movedToSeries: result.rowCount || 0,
-      counts: counts.rows
-    })
-  } catch (err) {
-    console.log('ERRO FIX MOVIES SERIES VIEW:', err)
-
-    res.status(500).json({
-      error: 'erro ao corrigir filmes e séries'
-    })
-  }
-})
-
-
 app.get('/series', auth, async (req, res) => {
   try {
     let limit = parseInt(req.query.limit, 10)
@@ -3940,74 +3816,28 @@ app.get('/series', auth, async (req, res) => {
     const result =
       await pool.query(
         `
-        WITH cleaned AS (
-          SELECT
-            id,
-            title,
-            year,
-            category,
-            image,
-            banner,
-            video,
-            description,
-            created_at,
-            LOWER(
-              REGEXP_REPLACE(
-                REGEXP_REPLACE(
-                  REGEXP_REPLACE(
-                    COALESCE(title, ''),
-                    '\\[[^\\]]*\\]',
-                    '',
-                    'g'
-                  ),
-                  '\\([^\\)]*\\)',
-                  '',
-                  'g'
-                ),
-                '\\s+',
-                ' ',
-                'g'
-              )
-            ) AS clean_title
-          FROM movies
-          WHERE
-            category = 'Series'
-            OR LOWER(COALESCE(video, '')) LIKE '%/series/%'
-            OR LOWER(COALESCE(title, '')) LIKE '%temporada%'
-            OR LOWER(COALESCE(title, '')) LIKE '%episodio%'
-            OR LOWER(COALESCE(title, '')) LIKE '%episódio%'
-            OR LOWER(COALESCE(title, '')) LIKE '%capitulo%'
-            OR LOWER(COALESCE(title, '')) LIKE '%capítulo%'
-            OR LOWER(COALESCE(title, '')) ~ 's[0-9]{1,2}e[0-9]{1,3}'
-            OR LOWER(COALESCE(title, '')) ~ '[0-9]{1,2}x[0-9]{1,3}'
-            OR LOWER(COALESCE(title, '')) ~ 't[0-9]{1,2}[[:space:]]*e[0-9]{1,3}'
-        ),
-        ranked AS (
-          SELECT
-            *,
-            ROW_NUMBER() OVER (
-              PARTITION BY clean_title
-              ORDER BY
-                CASE
-                  WHEN image IS NOT NULL AND image <> '' THEN 0
-                  ELSE 1
-                END,
-                id DESC
-            ) AS rn
-          FROM cleaned
-        )
         SELECT
           id,
           title,
           year,
-          'Series' AS category,
+          category,
           image,
           banner,
           video,
           description,
           created_at
-        FROM ranked
-        WHERE rn = 1
+        FROM movies
+        WHERE
+          category = 'Series'
+          OR LOWER(COALESCE(video, '')) LIKE '%/series/%'
+          OR LOWER(COALESCE(title, '')) LIKE '%temporada%'
+          OR LOWER(COALESCE(title, '')) LIKE '%episodio%'
+          OR LOWER(COALESCE(title, '')) LIKE '%episódio%'
+          OR LOWER(COALESCE(title, '')) LIKE '%capitulo%'
+          OR LOWER(COALESCE(title, '')) LIKE '%capítulo%'
+          OR LOWER(COALESCE(title, '')) ~ 's[0-9]{1,2}e[0-9]{1,3}'
+          OR LOWER(COALESCE(title, '')) ~ '[0-9]{1,2}x[0-9]{1,3}'
+          OR LOWER(COALESCE(title, '')) ~ 't[0-9]{1,2}[[:space:]]*e[0-9]{1,3}'
         ORDER BY id DESC
         LIMIT $1 OFFSET $2
         `,
@@ -4448,6 +4278,44 @@ app.get('/admin/reports/resellers', auth, adminOnly, async (req, res) => {
 })
 
 
+app.get('/stream-check', async (req, res) => {
+  try {
+    const { url } = req.query
+
+    if (!url) {
+      return res.status(400).json({
+        error: 'url obrigatória'
+      })
+    }
+
+    const streamUrl = decodeURIComponent(String(url))
+
+    const response = await fetch(streamUrl, {
+      method: 'HEAD',
+      redirect: 'follow',
+      headers: {
+        Accept: '*/*',
+        Range: 'bytes=0-1',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/148.0.0.0 Safari/537.36'
+      }
+    })
+
+    res.json({
+      ok: response.ok || response.status === 206,
+      status: response.status,
+      contentType: response.headers.get('content-type') || '',
+      contentLength: response.headers.get('content-length') || '',
+      acceptRanges: response.headers.get('accept-ranges') || ''
+    })
+  } catch (err) {
+    res.status(500).json({
+      error: err.message
+    })
+  }
+})
+
+
 app.get('/proxy-stream', async (req, res) => {
   try {
     const { url } = req.query
@@ -4462,28 +4330,38 @@ app.get('/proxy-stream', async (req, res) => {
       return res.status(400).send('url inválida')
     }
 
+    const range = req.headers.range
+
+    const requestHeaders = {
+      Accept: '*/*',
+      Connection: 'keep-alive',
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+      Referer: streamUrl,
+      Origin: new URL(streamUrl).origin,
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/148.0.0.0 Safari/537.36'
+    }
+
+    if (range) {
+      requestHeaders.Range = range
+    }
+
     const response = await fetch(streamUrl, {
       method: 'GET',
       redirect: 'follow',
-      headers: {
-        Accept: '*/*',
-        Connection: 'keep-alive',
-        'Cache-Control': 'no-cache',
-        Pragma: 'no-cache',
-        Referer: streamUrl,
-        Origin: new URL(streamUrl).origin,
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/148.0.0.0 Safari/537.36'
-      }
+      headers: requestHeaders
     })
 
-    if (!response.ok) {
+    if (!response.ok && response.status !== 206) {
       return res.status(response.status).send(`stream erro ${response.status}`)
     }
 
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Headers', '*')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS')
     res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Accept-Ranges', 'bytes')
 
     const contentType = response.headers.get('content-type') || ''
     const lowerUrl = streamUrl.toLowerCase()
@@ -4523,15 +4401,67 @@ app.get('/proxy-stream', async (req, res) => {
       return res.send(fixedText)
     }
 
-    res.setHeader('Content-Type', contentType || 'video/mp2t')
+    const contentLength = response.headers.get('content-length')
+    const contentRange = response.headers.get('content-range')
 
-    const buffer = Buffer.from(await response.arrayBuffer())
-    return res.send(buffer)
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength)
+    }
+
+    if (contentRange) {
+      res.setHeader('Content-Range', contentRange)
+    }
+
+    let finalContentType = contentType
+
+    if (!finalContentType) {
+      if (lowerUrl.includes('.mp4')) {
+        finalContentType = 'video/mp4'
+      } else if (lowerUrl.includes('.m3u8')) {
+        finalContentType = 'application/vnd.apple.mpegurl'
+      } else if (lowerUrl.includes('.ts') || lowerUrl.includes('mpegts')) {
+        finalContentType = 'video/mp2t'
+      } else if (lowerUrl.includes('.mkv')) {
+        finalContentType = 'video/x-matroska'
+      } else {
+        finalContentType = 'application/octet-stream'
+      }
+    }
+
+    res.setHeader('Content-Type', finalContentType)
+
+    if (response.status === 206 || range) {
+      res.status(206)
+    } else {
+      res.status(200)
+    }
+
+    if (!response.body) {
+      return res.status(500).send('stream sem corpo')
+    }
+
+    const nodeStream = Readable.fromWeb(response.body)
+
+    nodeStream.on('error', err => {
+      console.log('PROXY PIPE ERROR:', err.message)
+
+      if (!res.headersSent) {
+        res.status(500).send('erro proxy stream')
+      } else {
+        res.destroy(err)
+      }
+    })
+
+    return nodeStream.pipe(res)
   } catch (err) {
     console.log('PROXY STREAM ERROR:', err.message)
-    res.status(500).send('erro proxy stream')
+
+    if (!res.headersSent) {
+      res.status(500).send('erro proxy stream')
+    }
   }
 })
+
 app.get('/', (req, res) => {
   res.send('IPTV SERVER ONLINE')
 })
