@@ -1147,7 +1147,6 @@ app.get('/admin/resellers', auth, adminOnly, async (req, res) => {
         r.role,
         r.status,
         r.credits,
-        r.created_at,
         COUNT(c.id)::INTEGER AS clients_count
       FROM users r
       LEFT JOIN users c
@@ -1432,7 +1431,6 @@ app.patch('/admin/users/:id', auth, adminOnly, async (req, res) => {
         [
           role,
           status,
-          reseller_parent_id,
           plan,
           max_connections,
           expires_at,
@@ -1597,7 +1595,6 @@ app.post('/admin/users/create-random', auth, adminOnly, async (req, res) => {
           password,
           role,
           status,
-          reseller_parent_id,
           plan,
           max_connections,
           expires_at
