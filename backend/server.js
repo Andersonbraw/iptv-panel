@@ -1209,6 +1209,42 @@ app.delete('/admin/users/:id', auth, adminOnly, async (req, res) => {
   }
 })
 
+
+app.get('/admin/stats', auth, adminOnly, async (req, res) => {
+  try {
+    const [channelsResult, moviesResult, seriesResult] = await Promise.all([
+      pool.query(`
+        SELECT COUNT(*)::INTEGER AS total
+        FROM channels
+      `),
+      pool.query(`
+        SELECT COUNT(*)::INTEGER AS total
+        FROM movies
+        WHERE
+          LOWER(COALESCE(category, '')) NOT LIKE '%series%'
+          AND LOWER(COALESCE(category, '')) NOT LIKE '%séries%'
+      `),
+      pool.query(`
+        SELECT COUNT(*)::INTEGER AS total
+        FROM movies
+        WHERE category = 'Series'
+      `)
+    ])
+
+    res.json({
+      channels: channelsResult.rows[0]?.total || 0,
+      movies: moviesResult.rows[0]?.total || 0,
+      series: seriesResult.rows[0]?.total || 0
+    })
+  } catch (err) {
+    console.log('ERRO ADMIN STATS:', err)
+
+    res.status(500).json({
+      error: 'erro ao buscar estatísticas'
+    })
+  }
+})
+
 app.get('/me', auth, async (req, res) => {
   try {
     const result =
@@ -1252,11 +1288,17 @@ app.get('/channels', auth, async (req, res) => {
     let limit = parseInt(req.query.limit, 10)
 
     if (isNaN(limit) || limit <= 0) {
-      limit = 1000
+      limit = 50
     }
 
-    if (limit > 1000) {
-      limit = 1000
+    if (limit > 200) {
+      limit = 200
+    }
+
+    let offset = parseInt(req.query.offset, 10)
+
+    if (isNaN(offset) || offset < 0) {
+      offset = 0
     }
 
     const result =
@@ -1272,9 +1314,9 @@ app.get('/channels', auth, async (req, res) => {
           created_at
         FROM channels
         ORDER BY name ASC
-        LIMIT $1
+        LIMIT $1 OFFSET $2
         `,
-        [limit]
+        [limit, offset]
       )
 
     res.json(result.rows)
@@ -1695,11 +1737,17 @@ app.get('/movies', auth, async (req, res) => {
     let limit = parseInt(req.query.limit, 10)
 
     if (isNaN(limit) || limit <= 0) {
-      limit = 1000
+      limit = 50
     }
 
-    if (limit > 1000) {
-      limit = 1000
+    if (limit > 200) {
+      limit = 200
+    }
+
+    let offset = parseInt(req.query.offset, 10)
+
+    if (isNaN(offset) || offset < 0) {
+      offset = 0
     }
 
     const result =
@@ -1716,10 +1764,13 @@ app.get('/movies', auth, async (req, res) => {
           description,
           created_at
         FROM movies
+        WHERE
+          LOWER(COALESCE(category, '')) NOT LIKE '%series%'
+          AND LOWER(COALESCE(category, '')) NOT LIKE '%séries%'
         ORDER BY id DESC
-        LIMIT $1
+        LIMIT $1 OFFSET $2
         `,
-        [limit]
+        [limit, offset]
       )
 
     res.json(result.rows)
@@ -2224,11 +2275,17 @@ app.get('/series', auth, async (req, res) => {
     let limit = parseInt(req.query.limit, 10)
 
     if (isNaN(limit) || limit <= 0) {
-      limit = 1000
+      limit = 50
     }
 
-    if (limit > 1000) {
-      limit = 1000
+    if (limit > 200) {
+      limit = 200
+    }
+
+    let offset = parseInt(req.query.offset, 10)
+
+    if (isNaN(offset) || offset < 0) {
+      offset = 0
     }
 
     const result =
@@ -2247,9 +2304,9 @@ app.get('/series', auth, async (req, res) => {
         FROM movies
         WHERE category = 'Series'
         ORDER BY id DESC
-        LIMIT $1
+        LIMIT $1 OFFSET $2
         `,
-        [limit]
+        [limit, offset]
       )
 
     res.json(result.rows)

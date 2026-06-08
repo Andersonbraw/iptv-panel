@@ -44,17 +44,15 @@ function AdminPanel({ user, setUser, logout }) {
 
   async function loadCounts() {
     try {
-      const [channels, movies, series] =
-        await Promise.all([
-          axios.get(`${API}/channels?limit=1000`, authHeaders),
-          axios.get(`${API}/movies?limit=1000`, authHeaders),
-          axios.get(`${API}/series?limit=1000`, authHeaders)
-        ])
+      const res = await axios.get(
+        `${API}/admin/stats`,
+        authHeaders
+      )
 
       setStats({
-        channels: channels.data?.length || 0,
-        movies: movies.data?.length || 0,
-        series: series.data?.length || 0
+        channels: res.data?.channels || 0,
+        movies: res.data?.movies || 0,
+        series: res.data?.series || 0
       })
     } catch (err) {
       console.log('Erro contadores:', err)
