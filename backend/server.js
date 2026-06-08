@@ -1002,9 +1002,9 @@ async function addCreditHistory(resellerId, adminId, type, amount, description) 
 }
 
 async function addResellerSale(resellerId, client, saleType = 'cliente_30_dias') {
-  const saleValue = saleType === 'teste_5h' ? 0 : 25
-  const commission = saleType === 'teste_5h' ? 0 : 10
-  const profit = Math.max(0, saleValue - commission)
+  const saleValue = saleType === 'teste_5h' ? 0 : 8
+  const commission = 0
+  const profit = saleValue
 
   try {
     await pool.query(
