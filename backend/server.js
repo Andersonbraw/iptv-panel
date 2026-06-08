@@ -110,6 +110,22 @@ async function initDb() {
   `)
 
   await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS commission_rate NUMERIC DEFAULT 0
+  `)
+
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS balance NUMERIC DEFAULT 0
+  `)
+
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_test_ip TEXT DEFAULT ''
+  `)
+
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_test_created_at TIMESTAMP
+  `)
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS user_sessions (
       id SERIAL PRIMARY KEY,
       user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -153,6 +169,32 @@ async function initDb() {
       description TEXT,
       created_at TIMESTAMP DEFAULT NOW()
     )
+  `)
+
+  await pool.query(`
+    UPDATE movies
+    SET category = 'Series'
+    WHERE
+      category <> 'Series'
+      AND (
+        LOWER(COALESCE(video, '')) LIKE '%/series/%'
+        OR LOWER(COALESCE(description, '')) LIKE '%série%'
+        OR LOWER(COALESCE(description, '')) LIKE '%serie%'
+        OR LOWER(COALESCE(description, '')) LIKE '%series%'
+        OR LOWER(COALESCE(description, '')) LIKE '%temporada%'
+        OR LOWER(COALESCE(description, '')) LIKE '%episodio%'
+        OR LOWER(COALESCE(description, '')) LIKE '%episódio%'
+        OR LOWER(COALESCE(description, '')) LIKE '%capítulo%'
+        OR LOWER(COALESCE(description, '')) LIKE '%capitulo%'
+        OR LOWER(COALESCE(title, '')) LIKE '%temporada%'
+        OR LOWER(COALESCE(title, '')) LIKE '%episodio%'
+        OR LOWER(COALESCE(title, '')) LIKE '%episódio%'
+        OR LOWER(COALESCE(title, '')) LIKE '%capítulo%'
+        OR LOWER(COALESCE(title, '')) LIKE '%capitulo%'
+        OR LOWER(COALESCE(title, '')) ~ 's[0-9]{1,2}e[0-9]{1,3}'
+        OR LOWER(COALESCE(title, '')) ~ '[0-9]{1,2}x[0-9]{1,3}'
+        OR LOWER(COALESCE(title, '')) ~ 't[0-9]{1,2}[[:space:]]*e[0-9]{1,3}'
+      )
   `)
 
   await pool.query(`
@@ -219,6 +261,23 @@ async function initDb() {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_reseller_sales_reseller_id
     ON reseller_sales(reseller_id)
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS reseller_payments (
+      id SERIAL PRIMARY KEY,
+      reseller_id INTEGER,
+      amount NUMERIC DEFAULT 0,
+      method TEXT DEFAULT 'PIX',
+      status TEXT DEFAULT 'paid',
+      description TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `)
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_reseller_payments_reseller_id
+    ON reseller_payments(reseller_id)
   `)
 
   await pool.query(`
@@ -1029,8 +1088,30 @@ async function addCreditHistory(resellerId, adminId, type, amount, description) 
 
 async function addResellerSale(resellerId, client, saleType = 'cliente_30_dias') {
   const saleValue = saleType === 'teste_5h' ? 0 : 8
-  const commission = 0
-  const profit = saleValue
+
+  let commissionRate = 0
+
+  try {
+    const resellerResult = await pool.query(
+      `
+      SELECT commission_rate
+      FROM users
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [resellerId]
+    )
+
+    commissionRate = Number(resellerResult.rows[0]?.commission_rate || 0)
+  } catch {
+    commissionRate = 0
+  }
+
+  const commission = saleType === 'teste_5h'
+    ? 0
+    : Number(((saleValue * commissionRate) / 100).toFixed(2))
+
+  const profit = Number((saleValue - commission).toFixed(2))
 
   try {
     await pool.query(
@@ -1060,16 +1141,30 @@ async function addResellerSale(resellerId, client, saleType = 'cliente_30_dias')
         profit,
         saleType === 'teste_5h'
           ? 'Teste 5 horas gerado'
-          : 'Cliente premium 30 dias criado'
+          : 'Cliente 30 dias criado'
       ]
     )
+
+    if (commission > 0) {
+      await pool.query(
+        `
+        UPDATE users
+        SET balance = COALESCE(balance, 0) + $1
+        WHERE id = $2
+        `,
+        [
+          commission,
+          resellerId
+        ]
+      )
+    }
   } catch (err) {
     console.log('ERRO ADD SALE:', err.message)
   }
 }
 
 async function getResellerFinance(resellerId) {
-  const [salesResult, creditResult] = await Promise.all([
+  const [salesResult, todayResult, monthResult, creditResult, paymentsResult] = await Promise.all([
     pool.query(
       `
       SELECT
@@ -1084,6 +1179,32 @@ async function getResellerFinance(resellerId) {
     ),
     pool.query(
       `
+      SELECT
+        COALESCE(SUM(sale_value),0)::NUMERIC AS vendas_hoje,
+        COALESCE(SUM(commission),0)::NUMERIC AS comissoes_hoje,
+        COALESCE(SUM(profit),0)::NUMERIC AS lucro_hoje,
+        COUNT(*)::INTEGER AS total_hoje
+      FROM reseller_sales
+      WHERE reseller_id = $1
+        AND created_at::DATE = NOW()::DATE
+      `,
+      [resellerId]
+    ),
+    pool.query(
+      `
+      SELECT
+        COALESCE(SUM(sale_value),0)::NUMERIC AS vendas_mes,
+        COALESCE(SUM(commission),0)::NUMERIC AS comissoes_mes,
+        COALESCE(SUM(profit),0)::NUMERIC AS lucro_mes,
+        COUNT(*)::INTEGER AS total_mes
+      FROM reseller_sales
+      WHERE reseller_id = $1
+        AND DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
+      `,
+      [resellerId]
+    ),
+    pool.query(
+      `
       SELECT *
       FROM reseller_credit_history
       WHERE reseller_id = $1
@@ -1091,18 +1212,108 @@ async function getResellerFinance(resellerId) {
       LIMIT 50
       `,
       [resellerId]
+    ),
+    pool.query(
+      `
+      SELECT *
+      FROM reseller_payments
+      WHERE reseller_id = $1
+      ORDER BY id DESC
+      LIMIT 30
+      `,
+      [resellerId]
     )
   ])
 
   return {
-    finance: salesResult.rows[0] || {
-      vendas: 0,
-      comissoes: 0,
-      lucro: 0,
-      total_vendas: 0
+    finance: {
+      ...(salesResult.rows[0] || {}),
+      ...(todayResult.rows[0] || {}),
+      ...(monthResult.rows[0] || {})
     },
-    creditHistory: creditResult.rows || []
+    creditHistory: creditResult.rows || [],
+    payments: paymentsResult.rows || []
   }
+}
+
+
+async function getResellerNotifications(resellerId) {
+  const notifications = []
+
+  try {
+    const resellerResult = await pool.query(
+      `
+      SELECT credits, balance
+      FROM users
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [resellerId]
+    )
+
+    const reseller = resellerResult.rows[0]
+
+    if (Number(reseller?.credits || 0) <= 2) {
+      notifications.push({
+        type: 'credits',
+        title: 'Créditos acabando',
+        message: `Você tem ${Number(reseller?.credits || 0)} crédito(s) disponível(is).`
+      })
+    }
+
+    if (Number(reseller?.balance || 0) > 0) {
+      notifications.push({
+        type: 'balance',
+        title: 'Saldo disponível',
+        message: `Seu saldo de comissão é R$ ${Number(reseller.balance).toFixed(2)}.`
+      })
+    }
+
+    const expiring = await pool.query(
+      `
+      SELECT name, email, expires_at
+      FROM users
+      WHERE reseller_parent_id = $1
+        AND role = 'client'
+        AND expires_at IS NOT NULL
+        AND expires_at BETWEEN NOW() AND NOW() + INTERVAL '3 days'
+      ORDER BY expires_at ASC
+      LIMIT 10
+      `,
+      [resellerId]
+    )
+
+    for (const client of expiring.rows) {
+      notifications.push({
+        type: 'expiring',
+        title: 'Cliente vencendo',
+        message: `${client.name} vence em ${new Date(client.expires_at).toLocaleString('pt-BR')}.`
+      })
+    }
+
+    const payment = await pool.query(
+      `
+      SELECT amount, method, created_at
+      FROM reseller_payments
+      WHERE reseller_id = $1
+      ORDER BY id DESC
+      LIMIT 3
+      `,
+      [resellerId]
+    )
+
+    for (const item of payment.rows) {
+      notifications.push({
+        type: 'payment',
+        title: 'Novo pagamento',
+        message: `Pagamento ${item.method} de R$ ${Number(item.amount).toFixed(2)} registrado.`
+      })
+    }
+  } catch (err) {
+    console.log('ERRO NOTIFICATIONS:', err.message)
+  }
+
+  return notifications
 }
 
 
@@ -1113,7 +1324,7 @@ app.get('/reseller/dashboard', auth, adminOrReseller, async (req, res) => {
     const [meResult, clientsResult, salesResult, financePack] = await Promise.all([
       pool.query(
         `
-        SELECT id, name, email, role, status, credits
+        SELECT id, name, email, role, status, credits, commission_rate, balance
         FROM users
         WHERE id = $1
         LIMIT 1
@@ -1159,7 +1370,9 @@ app.get('/reseller/dashboard', auth, adminOrReseller, async (req, res) => {
       clients: clientsResult.rows,
       sales: salesResult.rows,
       finance: financePack.finance,
-      creditHistory: financePack.creditHistory
+      creditHistory: financePack.creditHistory,
+      payments: financePack.payments,
+      notifications: await getResellerNotifications(ownerId)
     })
   } catch (err) {
     console.log('ERRO RESELLER DASHBOARD:', err)
@@ -1272,8 +1485,59 @@ app.post('/reseller/clients/create-random', auth, adminOrReseller, async (req, r
 app.post('/reseller/clients/create-test', auth, adminOrReseller, async (req, res) => {
   try {
     const ownerId = req.user.id
+    const ip =
+      req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() ||
+      req.socket.remoteAddress ||
+      req.ip ||
+      ''
 
-    const login = generateRandomLogin(req.body.name)
+    const duplicateIp = await pool.query(
+      `
+      SELECT id
+      FROM users
+      WHERE reseller_parent_id = $1
+        AND role = 'client'
+        AND plan = 'teste'
+        AND last_test_ip = $2
+        AND last_test_created_at > NOW() - INTERVAL '24 hours'
+      LIMIT 1
+      `,
+      [
+        ownerId,
+        ip
+      ]
+    )
+
+    if (duplicateIp.rows.length > 0) {
+      return res.status(400).json({
+        error: 'já existe teste recente para este IP'
+      })
+    }
+
+    const duplicateName = await pool.query(
+      `
+      SELECT id
+      FROM users
+      WHERE reseller_parent_id = $1
+        AND role = 'client'
+        AND plan = 'teste'
+        AND LOWER(name) = LOWER($2)
+        AND expires_at > NOW()
+      LIMIT 1
+      `,
+      [
+        ownerId,
+        req.body.name || 'Teste 5H'
+      ]
+    )
+
+    if (duplicateName.rows.length > 0) {
+      return res.status(400).json({
+        error: 'já existe teste ativo com esse nome'
+      })
+    }
+
+    const login = generateRandomLogin(req.body.name || 'Teste 5H')
 
     const result = await pool.query(
       `
@@ -1288,16 +1552,19 @@ app.post('/reseller/clients/create-test', auth, adminOrReseller, async (req, res
         max_connections,
         expires_at,
         credits,
-        reseller_parent_id
+        reseller_parent_id,
+        last_test_ip,
+        last_test_created_at
       )
-      VALUES ($1,$2,$3,'client','active','teste',1,NOW() + INTERVAL '5 hours',0,$4)
+      VALUES ($1,$2,$3,'client','active','teste',1,NOW() + INTERVAL '5 hours',0,$4,$5,NOW())
       RETURNING id, name, email, role, status, plan, max_connections, expires_at, credits, reseller_parent_id
       `,
       [
         login.name,
         login.email,
         login.password,
-        ownerId
+        ownerId,
+        ip
       ]
     )
 
@@ -1319,10 +1586,11 @@ app.post('/reseller/clients/create-test', auth, adminOrReseller, async (req, res
   } catch (err) {
     console.log('ERRO CREATE TEST:', err)
     res.status(500).json({
-      error: err.message || 'erro ao criar teste 24h'
+      error: err.message || 'erro ao criar teste 5h'
     })
   }
 })
+
 
 app.patch('/reseller/clients/:id/name', auth, adminOrReseller, async (req, res) => {
   try {
@@ -1586,6 +1854,8 @@ app.get('/admin/resellers', auth, adminOnly, async (req, res) => {
         r.role,
         r.status,
         r.credits,
+        r.commission_rate,
+        r.balance,
         COUNT(DISTINCT c.id)::INTEGER AS clients_count,
         COALESCE(SUM(s.sale_value),0)::NUMERIC AS vendas,
         COALESCE(SUM(s.commission),0)::NUMERIC AS comissoes,
@@ -1754,6 +2024,101 @@ app.post('/admin/resellers/:id/add-credits', auth, adminOnly, async (req, res) =
     })
   }
 })
+
+
+app.patch('/admin/resellers/:id/commission', auth, adminOnly, async (req, res) => {
+  try {
+    const rate = Number(req.body.commission_rate || 0)
+
+    if (![0, 20, 30, 40].includes(rate)) {
+      return res.status(400).json({
+        error: 'comissão inválida'
+      })
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET commission_rate = $1
+      WHERE id = $2
+        AND role = 'reseller'
+      RETURNING id, name, email, commission_rate, balance
+      `,
+      [
+        rate,
+        req.params.id
+      ]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'revendedor não encontrado'
+      })
+    }
+
+    res.json(result.rows[0])
+  } catch (err) {
+    console.log('ERRO COMMISSION:', err)
+    res.status(500).json({
+      error: 'erro ao configurar comissão'
+    })
+  }
+})
+
+app.post('/admin/resellers/:id/payment', auth, adminOnly, async (req, res) => {
+  try {
+    const amount = Number(req.body.amount || 0)
+
+    if (amount <= 0) {
+      return res.status(400).json({
+        error: 'valor inválido'
+      })
+    }
+
+    await pool.query(
+      `
+      INSERT INTO reseller_payments
+      (
+        reseller_id,
+        amount,
+        method,
+        status,
+        description
+      )
+      VALUES ($1,$2,$3,'paid',$4)
+      `,
+      [
+        req.params.id,
+        amount,
+        req.body.method || 'PIX',
+        req.body.description || 'Pagamento registrado pelo admin'
+      ]
+    )
+
+    await pool.query(
+      `
+      UPDATE users
+      SET balance = GREATEST(COALESCE(balance, 0) - $1, 0)
+      WHERE id = $2
+        AND role = 'reseller'
+      `,
+      [
+        amount,
+        req.params.id
+      ]
+    )
+
+    res.json({
+      success: true
+    })
+  } catch (err) {
+    console.log('ERRO PAYMENT:', err)
+    res.status(500).json({
+      error: 'erro ao registrar pagamento'
+    })
+  }
+})
+
 
 app.get('/admin/resellers/:id/clients', auth, adminOnly, async (req, res) => {
   try {
@@ -2300,11 +2665,26 @@ app.get('/admin/stats', auth, adminOnly, async (req, res) => {
         WHERE
           LOWER(COALESCE(category, '')) NOT LIKE '%series%'
           AND LOWER(COALESCE(category, '')) NOT LIKE '%séries%'
+          AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%temporada%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%episodio%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%episódio%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%capitulo%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%capítulo%'
       `),
       pool.query(`
         SELECT COUNT(*)::INTEGER AS total
         FROM movies
-        WHERE category = 'Series'
+        WHERE
+          category = 'Series'
+          OR LOWER(COALESCE(video, '')) LIKE '%/series/%'
+          OR LOWER(COALESCE(title, '')) LIKE '%temporada%'
+          OR LOWER(COALESCE(title, '')) LIKE '%episodio%'
+          OR LOWER(COALESCE(title, '')) LIKE '%episódio%'
+          OR LOWER(COALESCE(title, '')) LIKE '%capitulo%'
+          OR LOWER(COALESCE(title, '')) LIKE '%capítulo%'
+          OR LOWER(COALESCE(title, '')) ~ 's[0-9]{1,2}e[0-9]{1,3}'
+          OR LOWER(COALESCE(title, '')) ~ '[0-9]{1,2}x[0-9]{1,3}'
       `)
     ])
 
@@ -2845,6 +3225,12 @@ app.get('/movies', auth, async (req, res) => {
         WHERE
           LOWER(COALESCE(category, '')) NOT LIKE '%series%'
           AND LOWER(COALESCE(category, '')) NOT LIKE '%séries%'
+          AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%temporada%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%episodio%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%episódio%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%capitulo%'
+          AND LOWER(COALESCE(title, '')) NOT LIKE '%capítulo%'
         ORDER BY id DESC
         LIMIT $1 OFFSET $2
         `,
@@ -3348,6 +3734,66 @@ app.delete('/movies-clear', auth, adminOnly, async (req, res) => {
   }
 })
 
+
+app.post('/admin/fix-series-categories', auth, adminOnly, async (req, res) => {
+  try {
+    const before = await pool.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE category = 'Series')::INTEGER AS series_before,
+        COUNT(*) FILTER (WHERE category <> 'Series')::INTEGER AS movies_before
+      FROM movies
+    `)
+
+    const result = await pool.query(`
+      UPDATE movies
+      SET category = 'Series'
+      WHERE
+        category <> 'Series'
+        AND (
+          LOWER(COALESCE(video, '')) LIKE '%/series/%'
+          OR LOWER(COALESCE(description, '')) LIKE '%série%'
+          OR LOWER(COALESCE(description, '')) LIKE '%serie%'
+          OR LOWER(COALESCE(description, '')) LIKE '%series%'
+          OR LOWER(COALESCE(description, '')) LIKE '%temporada%'
+          OR LOWER(COALESCE(description, '')) LIKE '%episodio%'
+          OR LOWER(COALESCE(description, '')) LIKE '%episódio%'
+          OR LOWER(COALESCE(description, '')) LIKE '%capítulo%'
+          OR LOWER(COALESCE(description, '')) LIKE '%capitulo%'
+          OR LOWER(COALESCE(title, '')) LIKE '%temporada%'
+          OR LOWER(COALESCE(title, '')) LIKE '%episodio%'
+          OR LOWER(COALESCE(title, '')) LIKE '%episódio%'
+          OR LOWER(COALESCE(title, '')) LIKE '%capítulo%'
+          OR LOWER(COALESCE(title, '')) LIKE '%capitulo%'
+          OR LOWER(COALESCE(title, '')) ~ 's[0-9]{1,2}e[0-9]{1,3}'
+          OR LOWER(COALESCE(title, '')) ~ '[0-9]{1,2}x[0-9]{1,3}'
+          OR LOWER(COALESCE(title, '')) ~ 't[0-9]{1,2}[[:space:]]*e[0-9]{1,3}'
+        )
+      RETURNING id
+    `)
+
+    const after = await pool.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE category = 'Series')::INTEGER AS series_after,
+        COUNT(*) FILTER (WHERE category <> 'Series')::INTEGER AS movies_after
+      FROM movies
+    `)
+
+    res.json({
+      success: true,
+      moved: result.rowCount || 0,
+      before: before.rows[0],
+      after: after.rows[0]
+    })
+  } catch (err) {
+    console.log('ERRO FIX SERIES:', err)
+
+    res.status(500).json({
+      error: 'erro ao corrigir séries'
+    })
+  }
+})
+
+
 app.get('/series', auth, async (req, res) => {
   try {
     let limit = parseInt(req.query.limit, 10)
@@ -3380,7 +3826,17 @@ app.get('/series', auth, async (req, res) => {
           description,
           created_at
         FROM movies
-        WHERE category = 'Series'
+        WHERE
+          category = 'Series'
+          OR LOWER(COALESCE(video, '')) LIKE '%/series/%'
+          OR LOWER(COALESCE(title, '')) LIKE '%temporada%'
+          OR LOWER(COALESCE(title, '')) LIKE '%episodio%'
+          OR LOWER(COALESCE(title, '')) LIKE '%episódio%'
+          OR LOWER(COALESCE(title, '')) LIKE '%capitulo%'
+          OR LOWER(COALESCE(title, '')) LIKE '%capítulo%'
+          OR LOWER(COALESCE(title, '')) ~ 's[0-9]{1,2}e[0-9]{1,3}'
+          OR LOWER(COALESCE(title, '')) ~ '[0-9]{1,2}x[0-9]{1,3}'
+          OR LOWER(COALESCE(title, '')) ~ 't[0-9]{1,2}[[:space:]]*e[0-9]{1,3}'
         ORDER BY id DESC
         LIMIT $1 OFFSET $2
         `,
@@ -3586,7 +4042,18 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
           [
             item.name || 'Filme',
             item.year || '',
-            'Filmes',
+            (
+              /s\d{1,2}e\d{1,3}/i.test(item.name || '') ||
+              /\d{1,2}x\d{1,3}/i.test(item.name || '') ||
+              String(item.name || '').toLowerCase().includes('temporada') ||
+              String(item.name || '').toLowerCase().includes('episodio') ||
+              String(item.name || '').toLowerCase().includes('episódio') ||
+              String(item.name || '').toLowerCase().includes('capitulo') ||
+              String(item.name || '').toLowerCase().includes('capítulo') ||
+              String(item.category_name || '').toLowerCase().includes('series') ||
+              String(item.category_name || '').toLowerCase().includes('séries') ||
+              String(item.category_name || '').toLowerCase().includes('serie')
+            ) ? 'Series' : 'Filmes',
             item.stream_icon || '',
             item.stream_icon || '',
             streamUrl,
@@ -3684,6 +4151,8 @@ app.get('/admin/reports/resellers', auth, adminOnly, async (req, res) => {
           r.email,
           r.credits,
           r.status,
+          r.commission_rate,
+          r.balance,
           COUNT(DISTINCT c.id)::INTEGER AS clients_count,
           COUNT(DISTINCT CASE WHEN c.status = 'active' THEN c.id END)::INTEGER AS active_clients,
           COUNT(DISTINCT CASE WHEN c.status = 'blocked' THEN c.id END)::INTEGER AS blocked_clients,
