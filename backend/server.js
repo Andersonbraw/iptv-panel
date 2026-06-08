@@ -2660,17 +2660,41 @@ app.get('/admin/stats', auth, adminOnly, async (req, res) => {
         FROM channels
       `),
       pool.query(`
-        SELECT COUNT(*)::INTEGER AS total
-        FROM movies
-        WHERE
-          LOWER(COALESCE(category, '')) NOT LIKE '%series%'
-          AND LOWER(COALESCE(category, '')) NOT LIKE '%séries%'
-          AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
-          AND LOWER(COALESCE(title, '')) NOT LIKE '%temporada%'
-          AND LOWER(COALESCE(title, '')) NOT LIKE '%episodio%'
-          AND LOWER(COALESCE(title, '')) NOT LIKE '%episódio%'
-          AND LOWER(COALESCE(title, '')) NOT LIKE '%capitulo%'
-          AND LOWER(COALESCE(title, '')) NOT LIKE '%capítulo%'
+        WITH cleaned AS (
+          SELECT
+            LOWER(
+              REGEXP_REPLACE(
+                REGEXP_REPLACE(
+                  REGEXP_REPLACE(
+                    COALESCE(title, ''),
+                    '\\[[^\\]]*\\]',
+                    '',
+                    'g'
+                  ),
+                  '\\([^\\)]*\\)',
+                  '',
+                  'g'
+                ),
+                '\\s+',
+                ' ',
+                'g'
+              )
+            ) AS clean_title
+          FROM movies
+          WHERE
+            LOWER(COALESCE(category, '')) NOT LIKE '%series%'
+            AND LOWER(COALESCE(category, '')) NOT LIKE '%séries%'
+            AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
+            AND LOWER(COALESCE(title, '')) NOT LIKE '%temporada%'
+            AND LOWER(COALESCE(title, '')) NOT LIKE '%episodio%'
+            AND LOWER(COALESCE(title, '')) NOT LIKE '%episódio%'
+            AND LOWER(COALESCE(title, '')) NOT LIKE '%capitulo%'
+            AND LOWER(COALESCE(title, '')) NOT LIKE '%capítulo%'
+            AND LOWER(COALESCE(title, '')) !~ 's[0-9]{1,2}e[0-9]{1,3}'
+            AND LOWER(COALESCE(title, '')) !~ '[0-9]{1,2}x[0-9]{1,3}'
+        )
+        SELECT COUNT(DISTINCT clean_title)::INTEGER AS total
+        FROM cleaned
       `),
       pool.query(`
         SELECT COUNT(*)::INTEGER AS total
@@ -3211,26 +3235,75 @@ app.get('/movies', auth, async (req, res) => {
     const result =
       await pool.query(
         `
+        WITH cleaned AS (
+          SELECT
+            id,
+            title,
+            year,
+            category,
+            image,
+            banner,
+            video,
+            description,
+            created_at,
+            LOWER(
+              REGEXP_REPLACE(
+                REGEXP_REPLACE(
+                  REGEXP_REPLACE(
+                    COALESCE(title, ''),
+                    '\\[[^\\]]*\\]',
+                    '',
+                    'g'
+                  ),
+                  '\\([^\\)]*\\)',
+                  '',
+                  'g'
+                ),
+                '\\s+',
+                ' ',
+                'g'
+              )
+            ) AS clean_title
+          FROM movies
+          WHERE
+            LOWER(COALESCE(category, '')) NOT LIKE '%series%'
+            AND LOWER(COALESCE(category, '')) NOT LIKE '%séries%'
+            AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
+            AND LOWER(COALESCE(title, '')) NOT LIKE '%temporada%'
+            AND LOWER(COALESCE(title, '')) NOT LIKE '%episodio%'
+            AND LOWER(COALESCE(title, '')) NOT LIKE '%episódio%'
+            AND LOWER(COALESCE(title, '')) NOT LIKE '%capitulo%'
+            AND LOWER(COALESCE(title, '')) NOT LIKE '%capítulo%'
+            AND LOWER(COALESCE(title, '')) !~ 's[0-9]{1,2}e[0-9]{1,3}'
+            AND LOWER(COALESCE(title, '')) !~ '[0-9]{1,2}x[0-9]{1,3}'
+            AND LOWER(COALESCE(title, '')) !~ 't[0-9]{1,2}[[:space:]]*e[0-9]{1,3}'
+        ),
+        ranked AS (
+          SELECT
+            *,
+            ROW_NUMBER() OVER (
+              PARTITION BY clean_title
+              ORDER BY
+                CASE
+                  WHEN image IS NOT NULL AND image <> '' THEN 0
+                  ELSE 1
+                END,
+                id DESC
+            ) AS rn
+          FROM cleaned
+        )
         SELECT
           id,
           title,
           year,
-          category,
+          'Filmes' AS category,
           image,
           banner,
           video,
           description,
           created_at
-        FROM movies
-        WHERE
-          LOWER(COALESCE(category, '')) NOT LIKE '%series%'
-          AND LOWER(COALESCE(category, '')) NOT LIKE '%séries%'
-          AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
-          AND LOWER(COALESCE(title, '')) NOT LIKE '%temporada%'
-          AND LOWER(COALESCE(title, '')) NOT LIKE '%episodio%'
-          AND LOWER(COALESCE(title, '')) NOT LIKE '%episódio%'
-          AND LOWER(COALESCE(title, '')) NOT LIKE '%capitulo%'
-          AND LOWER(COALESCE(title, '')) NOT LIKE '%capítulo%'
+        FROM ranked
+        WHERE rn = 1
         ORDER BY id DESC
         LIMIT $1 OFFSET $2
         `,
@@ -3794,6 +3867,58 @@ app.post('/admin/fix-series-categories', auth, adminOnly, async (req, res) => {
 })
 
 
+
+app.post('/admin/fix-movies-series-view', auth, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      UPDATE movies
+      SET category = 'Series'
+      WHERE
+        category <> 'Series'
+        AND (
+          LOWER(COALESCE(video, '')) LIKE '%/series/%'
+          OR LOWER(COALESCE(description, '')) LIKE '%série%'
+          OR LOWER(COALESCE(description, '')) LIKE '%serie%'
+          OR LOWER(COALESCE(description, '')) LIKE '%series%'
+          OR LOWER(COALESCE(description, '')) LIKE '%temporada%'
+          OR LOWER(COALESCE(description, '')) LIKE '%episodio%'
+          OR LOWER(COALESCE(description, '')) LIKE '%episódio%'
+          OR LOWER(COALESCE(description, '')) LIKE '%capítulo%'
+          OR LOWER(COALESCE(description, '')) LIKE '%capitulo%'
+          OR LOWER(COALESCE(title, '')) LIKE '%temporada%'
+          OR LOWER(COALESCE(title, '')) LIKE '%episodio%'
+          OR LOWER(COALESCE(title, '')) LIKE '%episódio%'
+          OR LOWER(COALESCE(title, '')) LIKE '%capítulo%'
+          OR LOWER(COALESCE(title, '')) LIKE '%capitulo%'
+          OR LOWER(COALESCE(title, '')) ~ 's[0-9]{1,2}e[0-9]{1,3}'
+          OR LOWER(COALESCE(title, '')) ~ '[0-9]{1,2}x[0-9]{1,3}'
+          OR LOWER(COALESCE(title, '')) ~ 't[0-9]{1,2}[[:space:]]*e[0-9]{1,3}'
+        )
+      RETURNING id
+    `)
+
+    const counts = await pool.query(`
+      SELECT category, COUNT(*)::INTEGER AS total
+      FROM movies
+      GROUP BY category
+      ORDER BY total DESC
+    `)
+
+    res.json({
+      success: true,
+      movedToSeries: result.rowCount || 0,
+      counts: counts.rows
+    })
+  } catch (err) {
+    console.log('ERRO FIX MOVIES SERIES VIEW:', err)
+
+    res.status(500).json({
+      error: 'erro ao corrigir filmes e séries'
+    })
+  }
+})
+
+
 app.get('/series', auth, async (req, res) => {
   try {
     let limit = parseInt(req.query.limit, 10)
@@ -3815,28 +3940,74 @@ app.get('/series', auth, async (req, res) => {
     const result =
       await pool.query(
         `
+        WITH cleaned AS (
+          SELECT
+            id,
+            title,
+            year,
+            category,
+            image,
+            banner,
+            video,
+            description,
+            created_at,
+            LOWER(
+              REGEXP_REPLACE(
+                REGEXP_REPLACE(
+                  REGEXP_REPLACE(
+                    COALESCE(title, ''),
+                    '\\[[^\\]]*\\]',
+                    '',
+                    'g'
+                  ),
+                  '\\([^\\)]*\\)',
+                  '',
+                  'g'
+                ),
+                '\\s+',
+                ' ',
+                'g'
+              )
+            ) AS clean_title
+          FROM movies
+          WHERE
+            category = 'Series'
+            OR LOWER(COALESCE(video, '')) LIKE '%/series/%'
+            OR LOWER(COALESCE(title, '')) LIKE '%temporada%'
+            OR LOWER(COALESCE(title, '')) LIKE '%episodio%'
+            OR LOWER(COALESCE(title, '')) LIKE '%episódio%'
+            OR LOWER(COALESCE(title, '')) LIKE '%capitulo%'
+            OR LOWER(COALESCE(title, '')) LIKE '%capítulo%'
+            OR LOWER(COALESCE(title, '')) ~ 's[0-9]{1,2}e[0-9]{1,3}'
+            OR LOWER(COALESCE(title, '')) ~ '[0-9]{1,2}x[0-9]{1,3}'
+            OR LOWER(COALESCE(title, '')) ~ 't[0-9]{1,2}[[:space:]]*e[0-9]{1,3}'
+        ),
+        ranked AS (
+          SELECT
+            *,
+            ROW_NUMBER() OVER (
+              PARTITION BY clean_title
+              ORDER BY
+                CASE
+                  WHEN image IS NOT NULL AND image <> '' THEN 0
+                  ELSE 1
+                END,
+                id DESC
+            ) AS rn
+          FROM cleaned
+        )
         SELECT
           id,
           title,
           year,
-          category,
+          'Series' AS category,
           image,
           banner,
           video,
           description,
           created_at
-        FROM movies
-        WHERE
-          category = 'Series'
-          OR LOWER(COALESCE(video, '')) LIKE '%/series/%'
-          OR LOWER(COALESCE(title, '')) LIKE '%temporada%'
-          OR LOWER(COALESCE(title, '')) LIKE '%episodio%'
-          OR LOWER(COALESCE(title, '')) LIKE '%episódio%'
-          OR LOWER(COALESCE(title, '')) LIKE '%capitulo%'
-          OR LOWER(COALESCE(title, '')) LIKE '%capítulo%'
-          OR LOWER(COALESCE(title, '')) ~ 's[0-9]{1,2}e[0-9]{1,3}'
-          OR LOWER(COALESCE(title, '')) ~ '[0-9]{1,2}x[0-9]{1,3}'
-          OR LOWER(COALESCE(title, '')) ~ 't[0-9]{1,2}[[:space:]]*e[0-9]{1,3}'
+        FROM ranked
+        WHERE rn = 1
         ORDER BY id DESC
         LIMIT $1 OFFSET $2
         `,
