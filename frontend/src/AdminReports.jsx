@@ -18,6 +18,7 @@ function AdminReports() {
     creditHistory: []
   })
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   const headers = useMemo(() => {
     return {
@@ -28,6 +29,7 @@ function AdminReports() {
   async function loadReports() {
     try {
       setLoading(true)
+      setError('')
 
       const res = await axios.get(
         `${API}/admin/reports/resellers`,
@@ -36,7 +38,9 @@ function AdminReports() {
 
       setData(res.data || {})
     } catch (err) {
-      alert(err.response?.data?.error || 'Erro ao carregar relatórios')
+      const message = err.response?.data?.error || 'Erro ao carregar relatórios'
+      setError(message)
+      alert(message)
     } finally {
       setLoading(false)
     }
@@ -62,6 +66,12 @@ function AdminReports() {
       </div>
 
       {loading && <div style={styles.loading}>Carregando relatórios...</div>}
+
+      {error && (
+        <div style={styles.errorBox}>
+          {error}
+        </div>
+      )}
 
       <div style={styles.statsGrid}>
         <div style={styles.cardBlue}>
@@ -195,6 +205,16 @@ const styles = {
     borderRadius: 14,
     marginBottom: 20,
     color: '#38bdf8',
+    fontWeight: 'bold'
+  },
+
+  errorBox: {
+    background: '#450a0a',
+    border: '1px solid #ef4444',
+    padding: 14,
+    borderRadius: 14,
+    marginBottom: 20,
+    color: '#fff',
     fontWeight: 'bold'
   },
 

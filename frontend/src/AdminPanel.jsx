@@ -390,6 +390,10 @@ function AdminPanel({ user, setUser, logout }) {
               <AdminResellers />
             )}
 
+            {page === 'reports' && (
+              <AdminReports />
+            )}
+
             {page === 'channels' && (
               <AdminChannels />
             )}
