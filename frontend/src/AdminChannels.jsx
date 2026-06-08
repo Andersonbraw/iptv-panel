@@ -78,8 +78,30 @@ function AdminChannels() {
   async function loadChannels() {
     try {
       setLoading(true)
-      const res = await axios.get(`${API}/channels`, authHeaders)
-      setChannels(res.data || [])
+
+      const pageSize = 1000
+      let offset = 0
+      let allChannels = []
+      let keepLoading = true
+
+      while (keepLoading) {
+        const res = await axios.get(
+          `${API}/channels?limit=${pageSize}&offset=${offset}`,
+          authHeaders
+        )
+
+        const data = Array.isArray(res.data) ? res.data : []
+
+        allChannels = [...allChannels, ...data]
+
+        if (data.length < pageSize) {
+          keepLoading = false
+        } else {
+          offset += pageSize
+        }
+      }
+
+      setChannels(allChannels)
     } catch (err) {
       console.log(err)
       alert(err.response?.data?.error || 'Erro ao carregar canais')

@@ -48,7 +48,29 @@ function AdminMovies() {
     try {
       setLoading(true)
 
-      const res = await axios.get(`${API}/movies`, authHeaders)
+      const pageSize = 1000
+      let offset = 0
+      let allItems = []
+      let keepLoading = true
+
+      while (keepLoading) {
+        const res = await axios.get(
+          `${API}/movies?limit=${pageSize}&offset=${offset}`,
+          authHeaders
+        )
+
+        const data = Array.isArray(res.data) ? res.data : []
+
+        allItems = [...allItems, ...data]
+
+        if (data.length < pageSize) {
+          keepLoading = false
+        } else {
+          offset += pageSize
+        }
+      }
+
+      const res = { data: allItems }
 
       setMovies(res.data || [])
     } catch (err) {
