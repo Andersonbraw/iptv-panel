@@ -1252,11 +1252,11 @@ app.get('/channels', auth, async (req, res) => {
     let limit = parseInt(req.query.limit, 10)
 
     if (isNaN(limit) || limit <= 0) {
-      limit = 50
+      limit = 1000
     }
 
-    if (limit > 200) {
-      limit = 200
+    if (limit > 1000) {
+      limit = 1000
     }
 
     const result =
@@ -1695,11 +1695,11 @@ app.get('/movies', auth, async (req, res) => {
     let limit = parseInt(req.query.limit, 10)
 
     if (isNaN(limit) || limit <= 0) {
-      limit = 50
+      limit = 1000
     }
 
-    if (limit > 200) {
-      limit = 200
+    if (limit > 1000) {
+      limit = 1000
     }
 
     const result =
@@ -2224,11 +2224,11 @@ app.get('/series', auth, async (req, res) => {
     let limit = parseInt(req.query.limit, 10)
 
     if (isNaN(limit) || limit <= 0) {
-      limit = 50
+      limit = 1000
     }
 
-    if (limit > 200) {
-      limit = 200
+    if (limit > 1000) {
+      limit = 1000
     }
 
     const result =
