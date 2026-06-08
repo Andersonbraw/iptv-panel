@@ -5,6 +5,7 @@ import AdminUsers from './AdminUsers'
 import AdminChannels from './AdminChannels'
 import AdminMovies from './AdminMovies'
 import AdminSeries from './AdminSeries'
+import AdminResellers from './AdminResellers'
 
 const API = 'https://iptv-backend-cuxf.onrender.com'
 
@@ -164,6 +165,20 @@ function AdminPanel({ user, setUser, logout }) {
             }
           >
             Usuários
+          </button>
+
+          <button
+            type='button'
+            style={
+              page === 'resellers'
+                ? styles.activeMenuButton
+                : styles.menuButton
+            }
+            onClick={() =>
+              setPage('resellers')
+            }
+          >
+            Revendedores
           </button>
 
           <button
@@ -354,6 +369,10 @@ function AdminPanel({ user, setUser, logout }) {
                 users={adminUsers}
                 reloadUsers={loadAdminUsers}
               />
+            )}
+
+            {page === 'resellers' && (
+              <AdminResellers />
             )}
 
             {page === 'channels' && (

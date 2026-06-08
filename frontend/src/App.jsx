@@ -4,6 +4,7 @@ import axios from 'axios'
 import Login from './Login'
 import AdminPanel from './AdminPanel'
 import ClientPanel from './ClientPanel'
+import ResellerPanel from './ResellerPanel'
 
 const API = 'https://iptv-backend-cuxf.onrender.com'
 
@@ -75,6 +76,16 @@ function App() {
   if (role === 'admin') {
     return (
       <AdminPanel
+        user={user}
+        setUser={setUser}
+        logout={logout}
+      />
+    )
+  }
+
+  if (role === 'reseller') {
+    return (
+      <ResellerPanel
         user={user}
         setUser={setUser}
         logout={logout}

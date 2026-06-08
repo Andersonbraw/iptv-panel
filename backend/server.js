@@ -101,6 +101,15 @@ async function initDb() {
   `)
 
   await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS reseller_parent_id INTEGER
+  `)
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_users_reseller_parent_id
+    ON users(reseller_parent_id)
+  `)
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS user_sessions (
       id SERIAL PRIMARY KEY,
       user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -872,6 +881,7 @@ app.post('/login', async (req, res) => {
         max_connections: user.max_connections,
         expires_at: user.expires_at,
         credits: user.credits,
+        reseller_parent_id: user.reseller_parent_id,
         watching: user.watching,
         watching_type: user.watching_type,
         watching_updated_at: user.watching_updated_at
@@ -907,6 +917,455 @@ app.post('/logout', auth, async (req, res) => {
     })
   }
 })
+
+
+function adminOrReseller(req, res, next) {
+  if (req.user.role !== 'admin' && req.user.role !== 'reseller') {
+    return res.status(403).json({
+      error: 'somente admin ou revendedor'
+    })
+  }
+
+  next()
+}
+
+app.get('/reseller/dashboard', auth, adminOrReseller, async (req, res) => {
+  try {
+    const ownerId = req.user.id
+
+    const [meResult, clientsResult] = await Promise.all([
+      pool.query(
+        `
+        SELECT id, name, email, role, status, credits
+        FROM users
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [ownerId]
+      ),
+      pool.query(
+        `
+        SELECT
+          id,
+          name,
+          email,
+          role,
+          status,
+          plan,
+          max_connections,
+          expires_at,
+          credits,
+          watching,
+          watching_type,
+          watching_updated_at
+        FROM users
+        WHERE reseller_parent_id = $1
+        ORDER BY id DESC
+        `,
+        [ownerId]
+      )
+    ])
+
+    res.json({
+      reseller: meResult.rows[0],
+      clients: clientsResult.rows
+    })
+  } catch (err) {
+    console.log('ERRO RESELLER DASHBOARD:', err)
+    res.status(500).json({
+      error: 'erro ao carregar painel revendedor'
+    })
+  }
+})
+
+app.post('/reseller/clients/create-random', auth, adminOrReseller, async (req, res) => {
+  try {
+    const ownerId = req.user.id
+
+    const ownerResult = await pool.query(
+      `
+      SELECT id, role, credits, status
+      FROM users
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [ownerId]
+    )
+
+    const owner = ownerResult.rows[0]
+
+    if (!owner || owner.status !== 'active') {
+      return res.status(403).json({
+        error: 'revendedor bloqueado'
+      })
+    }
+
+    const credits = Number(owner.credits || 0)
+
+    if (credits <= 0) {
+      return res.status(400).json({
+        error: 'sem créditos disponíveis'
+      })
+    }
+
+    const login = generateRandomLogin(req.body.name)
+
+    const result = await pool.query(
+      `
+      INSERT INTO users
+      (
+        name,
+        email,
+        password,
+        role,
+        status,
+        plan,
+        max_connections,
+        expires_at,
+        credits,
+        reseller_parent_id
+      )
+      VALUES ($1,$2,$3,'client','active','premium',1,NOW() + INTERVAL '30 days',0,$4)
+      RETURNING id, name, email, role, status, plan, max_connections, expires_at, credits, reseller_parent_id
+      `,
+      [
+        login.name,
+        login.email,
+        login.password,
+        ownerId
+      ]
+    )
+
+    await pool.query(
+      `
+      UPDATE users
+      SET credits = GREATEST(credits - 1, 0)
+      WHERE id = $1
+      `,
+      [ownerId]
+    )
+
+    res.json({
+      success: true,
+      user: result.rows[0],
+      login: {
+        name: login.name,
+        email: login.email,
+        password: login.password
+      }
+    })
+  } catch (err) {
+    console.log('ERRO CREATE CLIENT BY RESELLER:', err)
+
+    res.status(500).json({
+      error: err.message || 'erro ao criar cliente'
+    })
+  }
+})
+
+app.patch('/reseller/clients/:id', auth, adminOrReseller, async (req, res) => {
+  try {
+    const { id } = req.params
+    const { status, max_connections, expires_at } = req.body
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET
+        status = COALESCE($1, status),
+        max_connections = COALESCE($2, max_connections),
+        expires_at = COALESCE($3, expires_at)
+      WHERE id = $4
+        AND reseller_parent_id = $5
+        AND role = 'client'
+      RETURNING id, name, email, status, plan, max_connections, expires_at
+      `,
+      [
+        status,
+        max_connections,
+        expires_at,
+        id,
+        req.user.id
+      ]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'cliente não encontrado'
+      })
+    }
+
+    res.json(result.rows[0])
+  } catch (err) {
+    console.log('ERRO UPDATE CLIENT RESELLER:', err)
+
+    res.status(500).json({
+      error: 'erro ao atualizar cliente'
+    })
+  }
+})
+
+app.delete('/reseller/clients/:id', auth, adminOrReseller, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      DELETE FROM users
+      WHERE id = $1
+        AND reseller_parent_id = $2
+        AND role = 'client'
+      RETURNING id
+      `,
+      [req.params.id, req.user.id]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'cliente não encontrado'
+      })
+    }
+
+    res.json({
+      success: true
+    })
+  } catch (err) {
+    console.log('ERRO DELETE CLIENT RESELLER:', err)
+
+    res.status(500).json({
+      error: 'erro ao excluir cliente'
+    })
+  }
+})
+
+app.get('/admin/resellers', auth, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        r.id,
+        r.name,
+        r.email,
+        r.role,
+        r.status,
+        r.credits,
+        r.created_at,
+        COUNT(c.id)::INTEGER AS clients_count
+      FROM users r
+      LEFT JOIN users c
+        ON c.reseller_parent_id = r.id
+        AND c.role = 'client'
+      WHERE r.role = 'reseller'
+      GROUP BY r.id
+      ORDER BY r.id DESC
+      `
+    )
+
+    res.json(result.rows)
+  } catch (err) {
+    console.log('ERRO ADMIN RESELLERS:', err)
+
+    res.status(500).json({
+      error: 'erro ao buscar revendedores'
+    })
+  }
+})
+
+app.post('/admin/resellers/create', auth, adminOnly, async (req, res) => {
+  try {
+    const login = generateRandomLogin(req.body.name)
+    const credits = Math.max(0, Number(req.body.credits || 0))
+
+    const result = await pool.query(
+      `
+      INSERT INTO users
+      (
+        name,
+        email,
+        password,
+        role,
+        status,
+        plan,
+        max_connections,
+        expires_at,
+        credits
+      )
+      VALUES ($1,$2,$3,'reseller','active','revendedor',1,NULL,$4)
+      RETURNING id, name, email, role, status, credits
+      `,
+      [
+        login.name,
+        login.email,
+        login.password,
+        credits
+      ]
+    )
+
+    res.json({
+      success: true,
+      reseller: result.rows[0],
+      login: {
+        name: login.name,
+        email: login.email,
+        password: login.password
+      }
+    })
+  } catch (err) {
+    console.log('ERRO CREATE RESELLER:', err)
+
+    res.status(500).json({
+      error: err.message || 'erro ao criar revendedor'
+    })
+  }
+})
+
+app.patch('/admin/resellers/:id', auth, adminOnly, async (req, res) => {
+  try {
+    const { status, credits } = req.body
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET
+        status = COALESCE($1, status),
+        credits = COALESCE($2, credits)
+      WHERE id = $3
+        AND role = 'reseller'
+      RETURNING id, name, email, role, status, credits
+      `,
+      [
+        status,
+        credits,
+        req.params.id
+      ]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'revendedor não encontrado'
+      })
+    }
+
+    res.json(result.rows[0])
+  } catch (err) {
+    console.log('ERRO UPDATE RESELLER:', err)
+
+    res.status(500).json({
+      error: 'erro ao atualizar revendedor'
+    })
+  }
+})
+
+app.post('/admin/resellers/:id/add-credits', auth, adminOnly, async (req, res) => {
+  try {
+    const amount = Number(req.body.amount || 0)
+
+    if (amount <= 0) {
+      return res.status(400).json({
+        error: 'quantidade inválida'
+      })
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET credits = credits + $1
+      WHERE id = $2
+        AND role = 'reseller'
+      RETURNING id, name, email, role, status, credits
+      `,
+      [
+        amount,
+        req.params.id
+      ]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'revendedor não encontrado'
+      })
+    }
+
+    res.json(result.rows[0])
+  } catch (err) {
+    console.log('ERRO ADD CREDITS RESELLER:', err)
+
+    res.status(500).json({
+      error: 'erro ao adicionar créditos'
+    })
+  }
+})
+
+app.get('/admin/resellers/:id/clients', auth, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        id,
+        name,
+        email,
+        role,
+        status,
+        plan,
+        max_connections,
+        expires_at,
+        watching,
+        watching_type,
+        watching_updated_at
+      FROM users
+      WHERE reseller_parent_id = $1
+      ORDER BY id DESC
+      `,
+      [req.params.id]
+    )
+
+    res.json(result.rows)
+  } catch (err) {
+    console.log('ERRO RESELLER CLIENTS:', err)
+
+    res.status(500).json({
+      error: 'erro ao buscar clientes do revendedor'
+    })
+  }
+})
+
+app.delete('/admin/resellers/:id', auth, adminOnly, async (req, res) => {
+  try {
+    await pool.query(
+      `
+      UPDATE users
+      SET reseller_parent_id = NULL
+      WHERE reseller_parent_id = $1
+      `,
+      [req.params.id]
+    )
+
+    const result = await pool.query(
+      `
+      DELETE FROM users
+      WHERE id = $1
+        AND role = 'reseller'
+      RETURNING id
+      `,
+      [req.params.id]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'revendedor não encontrado'
+      })
+    }
+
+    res.json({
+      success: true
+    })
+  } catch (err) {
+    console.log('ERRO DELETE RESELLER:', err)
+
+    res.status(500).json({
+      error: 'erro ao excluir revendedor'
+    })
+  }
+})
+
 
 app.get('/admin/users', auth, adminOnly, async (req, res) => {
   try {
@@ -973,6 +1432,7 @@ app.patch('/admin/users/:id', auth, adminOnly, async (req, res) => {
         [
           role,
           status,
+          reseller_parent_id,
           plan,
           max_connections,
           expires_at,
@@ -1137,6 +1597,7 @@ app.post('/admin/users/create-random', auth, adminOnly, async (req, res) => {
           password,
           role,
           status,
+          reseller_parent_id,
           plan,
           max_connections,
           expires_at
@@ -1256,6 +1717,7 @@ app.get('/me', auth, async (req, res) => {
           email,
           role,
           status,
+          reseller_parent_id,
           plan,
           max_connections,
           expires_at,
