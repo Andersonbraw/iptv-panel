@@ -30,6 +30,9 @@ function ResellerPanel({ user, logout }) {
   const [search, setSearch] = useState('')
   const [createdLogin, setCreatedLogin] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [pixPackages, setPixPackages] = useState([])
+  const [pixOrders, setPixOrders] = useState([])
+  const [activePix, setActivePix] = useState(null)
   const [editingClient, setEditingClient] = useState(null)
   const [editName, setEditName] = useState('')
   const [editXtream, setEditXtream] = useState('')
@@ -45,6 +48,46 @@ function ResellerPanel({ user, logout }) {
     return clients.filter(client => `${client.name || ''} ${client.email || ''} ${client.xtream_username || ''}`.toLowerCase().includes(q))
   }, [clients, search])
 
+  async function loadPixData() {
+    try {
+      const [packagesRes, ordersRes] = await Promise.all([
+        axios.get(`${API}/reseller/pix/packages`, { headers }),
+        axios.get(`${API}/reseller/pix/orders`, { headers })
+      ])
+
+      setPixPackages(packagesRes.data || [])
+      setPixOrders(ordersRes.data || [])
+    } catch (err) {
+      console.log('Erro PIX:', err.message)
+    }
+  }
+
+  async function createPixOrder(pack) {
+    try {
+      setLoading(true)
+      const res = await axios.post(
+        `${API}/reseller/pix/create-order`,
+        {
+          credits: pack.credits
+        },
+        { headers }
+      )
+
+      setActivePix(res.data)
+      await loadPixData()
+      alert('PIX gerado')
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erro ao gerar PIX')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function copyPixCode(code) {
+    navigator.clipboard.writeText(code)
+    alert('Código PIX copiado')
+  }
+
   async function loadDashboard() {
     try {
       setLoading(true)
@@ -56,6 +99,7 @@ function ResellerPanel({ user, logout }) {
       setCreditHistory(res.data.creditHistory || [])
       setPayments(res.data.payments || [])
       setNotifications(res.data.notifications || [])
+      await loadPixData()
     } catch (err) {
       alert(err.response?.data?.error || 'Erro ao carregar painel revendedor')
     } finally {
@@ -401,6 +445,53 @@ M3U: ${API}/get.php?username=${encodeURIComponent(shortLogin)}&password=${encode
           ))}
         </div>
 
+        <div style={styles.pixBuyBox}>
+          <h2>Comprar créditos via PIX</h2>
+          <p style={styles.subtitle}>Escolha um pacote, pague no PIX e aguarde a liberação dos créditos.</p>
+
+          <div style={styles.pixPackages}>
+            {(pixPackages.length ? pixPackages : [
+              { credits: 10, amount: 80 },
+              { credits: 20, amount: 150 },
+              { credits: 50, amount: 350 }
+            ]).map(pack => (
+              <button
+                key={pack.credits}
+                style={styles.pixPackageButton}
+                onClick={() => createPixOrder(pack)}
+                disabled={loading}
+              >
+                <strong>{pack.credits} créditos</strong>
+                <span>{money(pack.amount)}</span>
+              </button>
+            ))}
+          </div>
+
+          {activePix && (
+            <div style={styles.pixCodeBox}>
+              <strong>PIX gerado: {activePix.package_credits} créditos • {money(activePix.amount)}</strong>
+              <textarea
+                readOnly
+                value={activePix.pix_code}
+                style={styles.pixTextarea}
+              />
+              <button style={styles.greenButton} onClick={() => copyPixCode(activePix.pix_code)}>
+                Copiar código PIX
+              </button>
+            </div>
+          )}
+
+          <h3>Meus pedidos PIX</h3>
+          {pixOrders.slice(0, 5).map(order => (
+            <div key={order.id} style={styles.pixOrderItem}>
+              <span>{order.package_credits} créditos • {money(order.amount)}</span>
+              <strong style={{ color: order.status === 'paid' ? '#22c55e' : '#facc15' }}>
+                {order.status === 'paid' ? 'Pago' : 'Pendente'}
+              </strong>
+            </div>
+          ))}
+        </div>
+
         <div style={styles.createBox}>
           <input placeholder='Nome do cliente ou teste' value={clientName} onChange={e => setClientName(e.target.value)} style={styles.input} />
           <input placeholder='Pesquisar cliente...' value={search} onChange={e => setSearch(e.target.value)} style={styles.inputSearch} />
@@ -601,6 +692,12 @@ const styles = {
   topBar: { marginBottom: 24 },
   notificationsBox: { background: '#07142b', border: '1px solid rgba(56,189,248,0.15)', borderRadius: 18, padding: 16, marginBottom: 18 },
   notificationItem: { background: '#020617', padding: 12, borderRadius: 12, marginBottom: 8 },
+  pixBuyBox: { background: '#07142b', border: '1px solid rgba(56,189,248,0.15)', borderRadius: 22, padding: 18, marginBottom: 22 },
+  pixPackages: { display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 },
+  pixPackageButton: { minWidth: 160, padding: 18, border: 'none', borderRadius: 16, background: 'linear-gradient(180deg,#14532d,#052e16)', color: '#fff', fontWeight: 'bold', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' },
+  pixCodeBox: { background: '#020617', border: '1px solid #38bdf8', borderRadius: 16, padding: 14, marginBottom: 16 },
+  pixTextarea: { width: '100%', minHeight: 95, marginTop: 10, marginBottom: 10, padding: 12, borderRadius: 12, border: '1px solid #334155', background: '#07142b', color: '#fff', boxSizing: 'border-box' },
+  pixOrderItem: { display: 'flex', justifyContent: 'space-between', gap: 12, background: '#020617', padding: 12, borderRadius: 12, marginTop: 8 },
   createBox: { display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 22, background: '#07142b', padding: 18, borderRadius: 22 },
   input: { minWidth: 240, flex: 1, padding: 14, borderRadius: 14, border: '1px solid #334155', background: '#020617', color: '#fff' },
   inputSearch: { minWidth: 220, padding: 14, borderRadius: 14, border: '1px solid #334155', background: '#020617', color: '#fff' },

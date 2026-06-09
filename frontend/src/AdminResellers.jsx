@@ -31,6 +31,7 @@ function AdminResellers() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('todos')
   const [loading, setLoading] = useState(false)
+  const [pixOrders, setPixOrders] = useState([])
 
   const headers = useMemo(() => ({ Authorization: `Bearer ${localStorage.getItem('token')}` }), [])
 
@@ -43,6 +44,31 @@ function AdminResellers() {
       return matchesSearch && matchesStatus
     })
   }, [resellers, search, statusFilter])
+
+  async function loadPixOrders() {
+    try {
+      const res = await axios.get(`${API}/admin/pix/orders`, { headers })
+      setPixOrders(res.data || [])
+    } catch (err) {
+      console.log('Erro PIX:', err.message)
+    }
+  }
+
+  async function approvePixOrder(order) {
+    if (!confirm(`Aprovar PIX de ${money(order.amount)} para ${order.reseller_name}?`)) return
+
+    try {
+      setLoading(true)
+      await axios.post(`${API}/admin/pix/orders/${order.id}/approve`, {}, { headers })
+      await loadPixOrders()
+      await loadResellers()
+      alert('PIX aprovado e créditos liberados')
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erro ao aprovar PIX')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   async function loadResellers() {
     try {
@@ -231,7 +257,7 @@ function AdminResellers() {
     alert('Login copiado')
   }
 
-  useEffect(() => { loadResellers() }, [])
+  useEffect(() => { loadResellers(); loadPixOrders() }, [])
 
   return (
     <div style={styles.container}>
@@ -270,6 +296,35 @@ function AdminResellers() {
       )}
 
       {loading && <div style={styles.loading}>Processando...</div>}
+
+      <div style={styles.pixBox}>
+        <h2>PIX de Créditos</h2>
+
+        {pixOrders.length === 0 && (
+          <p style={styles.subtitle}>Nenhum pedido PIX ainda.</p>
+        )}
+
+        {pixOrders.map(order => (
+          <div key={order.id} style={styles.pixOrder}>
+            <div>
+              <strong>{order.reseller_name || 'Revendedor'}</strong>
+              <p style={styles.email}>{order.reseller_email}</p>
+              <small>{order.package_credits} créditos • {money(order.amount)}</small><br />
+              <small>Status: {order.status}</small><br />
+              <small>{new Date(order.created_at).toLocaleString('pt-BR')}</small>
+            </div>
+
+            {order.status !== 'paid' && (
+              <button
+                style={styles.greenButton}
+                onClick={() => approvePixOrder(order)}
+              >
+                Aprovar PIX
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
 
       <div style={styles.mainGrid}>
         <div>
@@ -367,6 +422,8 @@ const styles = {
   loginBox: { background: '#020617', padding: 18, borderRadius: 18, marginBottom: 20, border: '1px solid #38bdf8' },
   copyInput: { width: '100%', padding: 12, marginBottom: 10, borderRadius: 12, border: '1px solid #334155', background: '#07142b', color: '#fff', boxSizing: 'border-box' },
   loading: { background: '#020617', border: '1px solid #12345f', padding: 14, borderRadius: 14, marginBottom: 20, color: '#38bdf8', fontWeight: 'bold' },
+  pixBox: { background: '#020617', borderRadius: 18, padding: 16, border: '1px solid rgba(56,189,248,0.15)', marginBottom: 18 },
+  pixOrder: { display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', background: '#07142b', borderRadius: 14, padding: 14, marginBottom: 10, border: '1px solid rgba(56,189,248,0.12)' },
   mainGrid: { display: 'grid', gridTemplateColumns: '1fr 1.35fr', gap: 18 },
   card: { display: 'flex', justifyContent: 'space-between', gap: 20, background: 'linear-gradient(180deg,#020617,#111827)', padding: 18, borderRadius: 18, marginBottom: 14, border: '1px solid rgba(255,255,255,0.05)', flexWrap: 'wrap' },
   name: { fontSize: 18 },

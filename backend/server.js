@@ -304,6 +304,31 @@ async function initDb() {
   `)
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS pix_credit_orders (
+      id SERIAL PRIMARY KEY,
+      reseller_id INTEGER,
+      package_credits INTEGER DEFAULT 0,
+      amount NUMERIC DEFAULT 0,
+      status TEXT DEFAULT 'pending',
+      pix_code TEXT,
+      txid TEXT UNIQUE,
+      paid_at TIMESTAMP,
+      approved_by INTEGER,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `)
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_pix_credit_orders_reseller_id
+    ON pix_credit_orders(reseller_id)
+  `)
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_pix_credit_orders_status
+    ON pix_credit_orders(status)
+  `)
+
+  await pool.query(`
     UPDATE reseller_sales
     SET
       sale_value = 0,
@@ -1110,6 +1135,79 @@ function generateSimplePassword() {
     .slice(2, 10)
 }
 
+
+const PIX_PACKAGES = [
+  { credits: 10, amount: 80 },
+  { credits: 20, amount: 150 },
+  { credits: 50, amount: 350 }
+]
+
+function getPixPackage(credits) {
+  return PIX_PACKAGES.find(item => Number(item.credits) === Number(credits))
+}
+
+function pixPayload(txid, amount, resellerName = 'NEXORA TV') {
+  const pixKey = process.env.PIX_KEY || 'configure-sua-chave-pix'
+  const merchantName = (process.env.PIX_MERCHANT_NAME || 'NEXORA TV')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Z0-9 ]/gi, '')
+    .substring(0, 25)
+    .toUpperCase()
+
+  const merchantCity = (process.env.PIX_MERCHANT_CITY || 'BRASIL')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Z0-9 ]/gi, '')
+    .substring(0, 15)
+    .toUpperCase()
+
+  function field(id, value) {
+    const str = String(value)
+    return `${id}${String(str.length).padStart(2, '0')}${str}`
+  }
+
+  const gui = field('00', 'br.gov.bcb.pix')
+  const key = field('01', pixKey)
+  const desc = field('02', `Creditos ${resellerName}`.substring(0, 60))
+  const merchantAccount = field('26', gui + key + desc)
+
+  const payload =
+    field('00', '01') +
+    merchantAccount +
+    field('52', '0000') +
+    field('53', '986') +
+    field('54', Number(amount).toFixed(2)) +
+    field('58', 'BR') +
+    field('59', merchantName) +
+    field('60', merchantCity) +
+    field('62', field('05', String(txid).substring(0, 25)))
+
+  const withCrc = `${payload}6304`
+  return `${withCrc}${crc16(withCrc)}`
+}
+
+function crc16(payload) {
+  let crc = 0xffff
+
+  for (let i = 0; i < payload.length; i++) {
+    crc ^= payload.charCodeAt(i) << 8
+
+    for (let j = 0; j < 8; j++) {
+      if ((crc & 0x8000) !== 0) {
+        crc = (crc << 1) ^ 0x1021
+      } else {
+        crc <<= 1
+      }
+
+      crc &= 0xffff
+    }
+  }
+
+  return crc.toString(16).toUpperCase().padStart(4, '0')
+}
+
+
 async function addCreditHistory(resellerId, adminId, type, amount, description) {
   try {
     await pool.query(
@@ -1374,6 +1472,217 @@ async function getResellerNotifications(resellerId) {
   return notifications
 }
 
+
+
+app.get('/reseller/pix/packages', auth, adminOrReseller, async (req, res) => {
+  res.json(PIX_PACKAGES)
+})
+
+app.get('/reseller/pix/orders', auth, adminOrReseller, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM pix_credit_orders
+      WHERE reseller_id = $1
+      ORDER BY id DESC
+      LIMIT 30
+      `,
+      [req.user.id]
+    )
+
+    res.json(result.rows)
+  } catch (err) {
+    console.log('ERRO PIX ORDERS RESELLER:', err)
+    res.status(500).json({
+      error: 'erro ao carregar pedidos PIX'
+    })
+  }
+})
+
+app.post('/reseller/pix/create-order', auth, adminOrReseller, async (req, res) => {
+  try {
+    const pack = getPixPackage(req.body.credits)
+
+    if (!pack) {
+      return res.status(400).json({
+        error: 'pacote inválido'
+      })
+    }
+
+    const resellerResult = await pool.query(
+      `
+      SELECT id, name
+      FROM users
+      WHERE id = $1
+        AND role = 'reseller'
+      LIMIT 1
+      `,
+      [req.user.id]
+    )
+
+    if (resellerResult.rows.length === 0) {
+      return res.status(403).json({
+        error: 'somente revendedor'
+      })
+    }
+
+    const txid = `NX${Date.now()}${Math.floor(Math.random() * 9999)}`.substring(0, 25)
+    const pixCode = pixPayload(txid, pack.amount, resellerResult.rows[0].name)
+
+    const result = await pool.query(
+      `
+      INSERT INTO pix_credit_orders
+      (
+        reseller_id,
+        package_credits,
+        amount,
+        status,
+        pix_code,
+        txid
+      )
+      VALUES ($1,$2,$3,'pending',$4,$5)
+      RETURNING *
+      `,
+      [
+        req.user.id,
+        pack.credits,
+        pack.amount,
+        pixCode,
+        txid
+      ]
+    )
+
+    res.json(result.rows[0])
+  } catch (err) {
+    console.log('ERRO CREATE PIX ORDER:', err)
+    res.status(500).json({
+      error: 'erro ao gerar PIX'
+    })
+  }
+})
+
+app.get('/admin/pix/orders', auth, adminOnly, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        pix_credit_orders.*,
+        users.name AS reseller_name,
+        users.email AS reseller_email
+      FROM pix_credit_orders
+      LEFT JOIN users ON users.id = pix_credit_orders.reseller_id
+      ORDER BY pix_credit_orders.id DESC
+      LIMIT 80
+      `
+    )
+
+    res.json(result.rows)
+  } catch (err) {
+    console.log('ERRO ADMIN PIX ORDERS:', err)
+    res.status(500).json({
+      error: 'erro ao carregar pedidos PIX'
+    })
+  }
+})
+
+app.post('/admin/pix/orders/:id/approve', auth, adminOnly, async (req, res) => {
+  try {
+    const orderResult = await pool.query(
+      `
+      SELECT *
+      FROM pix_credit_orders
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [req.params.id]
+    )
+
+    if (orderResult.rows.length === 0) {
+      return res.status(404).json({
+        error: 'pedido PIX não encontrado'
+      })
+    }
+
+    const order = orderResult.rows[0]
+
+    if (order.status === 'paid') {
+      return res.status(400).json({
+        error: 'pedido já aprovado'
+      })
+    }
+
+    await pool.query('BEGIN')
+
+    await pool.query(
+      `
+      UPDATE pix_credit_orders
+      SET status = 'paid',
+          paid_at = NOW(),
+          approved_by = $1
+      WHERE id = $2
+      `,
+      [
+        req.user.id,
+        order.id
+      ]
+    )
+
+    await pool.query(
+      `
+      UPDATE users
+      SET credits = COALESCE(credits, 0) + $1
+      WHERE id = $2
+      `,
+      [
+        order.package_credits,
+        order.reseller_id
+      ]
+    )
+
+    await pool.query(
+      `
+      INSERT INTO reseller_payments
+      (
+        reseller_id,
+        amount,
+        method,
+        status,
+        description
+      )
+      VALUES ($1,$2,'PIX','paid',$3)
+      `,
+      [
+        order.reseller_id,
+        order.amount,
+        `PIX aprovado - ${order.package_credits} créditos`
+      ]
+    )
+
+    await addCreditHistory(
+      order.reseller_id,
+      req.user.id,
+      'pix_creditos',
+      order.package_credits,
+      `PIX aprovado: ${order.package_credits} créditos por R$ ${Number(order.amount).toFixed(2)}`
+    )
+
+    await pool.query('COMMIT')
+
+    res.json({
+      success: true
+    })
+  } catch (err) {
+    try {
+      await pool.query('ROLLBACK')
+    } catch {}
+
+    console.log('ERRO APPROVE PIX:', err)
+    res.status(500).json({
+      error: 'erro ao aprovar PIX'
+    })
+  }
+})
 
 app.get('/reseller/dashboard', auth, adminOrReseller, async (req, res) => {
   try {
