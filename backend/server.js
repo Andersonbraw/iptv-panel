@@ -2525,6 +2525,7 @@ app.get('/admin/users', auth, adminOnly, async (req, res) => {
           users.id,
           users.name,
           users.email,
+          users.password,
           users.xtream_username,
           users.role,
           users.status,

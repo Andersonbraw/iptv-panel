@@ -188,6 +188,17 @@ function AdminUsers({
     )
   }
 
+  function getM3ULink(user) {
+    const username = getShortLogin(user)
+    const password = user.password || ''
+
+    if (!username || !password) {
+      return ''
+    }
+
+    return `${API}/get.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&type=m3u_plus&output=mpegts`
+  }
+
   async function saveXtreamLogin() {
     if (!editingLoginUser) return
 
@@ -248,6 +259,18 @@ Senha: ${user.password || 'senha do cliente'}
     alert('Dados Xtream copiados')
   }
 
+  function copyUserM3U(user) {
+    const link = getM3ULink(user)
+
+    if (!link) {
+      alert('Senha não disponível. Atualize o backend enviado junto neste ZIP.')
+      return
+    }
+
+    navigator.clipboard.writeText(link)
+    alert('Link M3U copiado')
+  }
+
   async function deleteUser(id) {
     const confirmDelete = confirm('Excluir este cliente?')
 
@@ -285,6 +308,8 @@ Login Xtream: ${createdLogin.xtream_username || String(createdLogin.email || '')
 Senha: ${createdLogin.password}
 
 Servidor: ${API}
+
+M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username || String(createdLogin.email || '').replace(/\D/g, ''))}&password=${encodeURIComponent(createdLogin.password)}&type=m3u_plus&output=mpegts
     `)
 
     alert('Login copiado')
@@ -397,6 +422,12 @@ Servidor: ${API}
             style={styles.copyInput}
           />
 
+          <input
+            readOnly
+            value={`M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username || String(createdLogin.email || '').replace(/\\D/g, ''))}&password=${encodeURIComponent(createdLogin.password)}&type=m3u_plus&output=mpegts`}
+            style={styles.copyInput}
+          />
+
           <button
             style={styles.greenButton}
             onClick={copyLogin}
@@ -411,7 +442,7 @@ Servidor: ${API}
           <h3>Editar Login Xtream</h3>
 
           <p style={styles.subtitle}>
-            Este é o usuário curto para apps como XCIPTV, Smarters, TiviMate e Televizo.
+            Use números curtos para facilitar na TV Box, exemplo: 823966.
           </p>
 
           <input
@@ -688,6 +719,13 @@ Servidor: ${API}
                     >
                       Copiar Xtream
                     </button>
+
+                    <button
+                      style={styles.purpleButton}
+                      onClick={() => copyUserM3U(user)}
+                    >
+                      Gerar M3U
+                    </button>
                   </>
                 )}
 
@@ -828,8 +866,8 @@ const styles = {
   },
 
   card: {
-    display: 'flex',
-    justifyContent: 'space-between',
+    display: 'grid',
+    gridTemplateColumns: 'minmax(360px, 1fr) minmax(360px, auto)',
     gap: 20,
     background:
       'linear-gradient(180deg,#020617,#111827)',
@@ -837,7 +875,7 @@ const styles = {
     borderRadius: 20,
     marginTop: 16,
     border: '1px solid rgba(255,255,255,0.05)',
-    flexWrap: 'wrap'
+    alignItems: 'start'
   },
 
   userName: {
@@ -863,8 +901,12 @@ const styles = {
   },
 
   right: {
-    minWidth: 320,
-    textAlign: 'right'
+    minWidth: 360,
+    textAlign: 'right',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    justifyContent: 'flex-start'
   },
 
   role: {
@@ -877,7 +919,8 @@ const styles = {
     gap: 8,
     flexWrap: 'wrap',
     justifyContent: 'flex-end',
-    marginTop: 10
+    marginTop: 10,
+    maxWidth: 650
   },
 
   modalActions: {
@@ -964,6 +1007,17 @@ const styles = {
     background:
       'linear-gradient(90deg,#facc15,#eab308)',
     color: '#000',
+    fontWeight: 'bold',
+    cursor: 'pointer'
+  },
+
+  purpleButton: {
+    padding: '10px 14px',
+    border: 'none',
+    borderRadius: 12,
+    background:
+      'linear-gradient(90deg,#a855f7,#7e22ce)',
+    color: '#fff',
     fontWeight: 'bold',
     cursor: 'pointer'
   },
