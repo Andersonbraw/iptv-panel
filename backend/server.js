@@ -3909,19 +3909,7 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
       params.set('password', password)
 
       if (action) {
-        if (String(action).includes('&')) {
-          const [mainAction, ...rest] = String(action).split('&')
-          params.set('action', mainAction)
-
-          for (const part of rest) {
-            const [key, value] = part.split('=')
-            if (key && value !== undefined) {
-              params.set(key, value)
-            }
-          }
-        } else {
-          params.set('action', action)
-        }
+        params.set('action', action)
       }
 
       return `${server}/player_api.php?${params.toString()}`
@@ -4087,87 +4075,51 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
           continue
         }
 
-        const info = await getJson(makeApiUrl(`get_series_info&series_id=${item.series_id}`))
-        const episodesObj = info?.episodes || {}
-        const seriesTitle = item.name || info?.info?.name || 'Série'
-        const seriesCover = item.cover || info?.info?.cover || ''
+        const streamUrl = `${server}/series/${username}/${password}/${item.series_id}.m3u8`
 
-        let insertedEpisodes = 0
+        const exists = await pool.query(
+          `
+          SELECT id
+          FROM movies
+          WHERE title = $1
+          AND category = 'Series'
+          LIMIT 1
+          `,
+          [item.name || 'Série']
+        )
 
-        for (const seasonKey of Object.keys(episodesObj)) {
-          const seasonEpisodes = Array.isArray(episodesObj[seasonKey])
-            ? episodesObj[seasonKey]
-            : []
-
-          for (const ep of seasonEpisodes) {
-            try {
-              if (!ep.id) {
-                skipped++
-                continue
-              }
-
-              const seasonNumber = Number(seasonKey || ep.season || 1)
-              const episodeNumber = Number(ep.episode_num || ep.episode || 1)
-              const ext = ep.container_extension || 'mp4'
-              const episodeTitle = ep.title || `Episódio ${episodeNumber}`
-
-              const streamUrl = `${server}/series/${username}/${password}/${ep.id}.${ext}`
-
-              const exists = await pool.query(
-                `
-                SELECT id
-                FROM movies
-                WHERE video = $1
-                LIMIT 1
-                `,
-                [streamUrl]
-              )
-
-              if (exists.rows.length > 0) {
-                skipped++
-                continue
-              }
-
-              const fullTitle = `${seriesTitle} S${String(seasonNumber).padStart(2, '0')}E${String(episodeNumber).padStart(2, '0')} - ${episodeTitle}`
-
-              await pool.query(
-                `
-                INSERT INTO movies
-                (
-                  title,
-                  year,
-                  category,
-                  image,
-                  banner,
-                  video,
-                  description
-                )
-                VALUES ($1,$2,$3,$4,$5,$6,$7)
-                `,
-                [
-                  fullTitle,
-                  item.year || '',
-                  'Series',
-                  ep.info?.movie_image || seriesCover || '',
-                  seriesCover || ep.info?.movie_image || '',
-                  streamUrl,
-                  item.plot || info?.info?.plot || 'Episódio importado via Xtream'
-                ]
-              )
-
-              insertedEpisodes++
-              series++
-            } catch (episodeErr) {
-              skipped++
-            }
-          }
-        }
-
-        if (insertedEpisodes === 0) {
+        if (exists.rows.length > 0) {
           skipped++
+          continue
         }
+
+        await pool.query(
+          `
+          INSERT INTO movies
+          (
+            title,
+            year,
+            category,
+            image,
+            banner,
+            video,
+            description
+          )
+          VALUES ($1,$2,$3,$4,$5,$6,$7)
+          `,
+          [
+            item.name || 'Série',
+            item.year || '',
+            'Series',
+            item.cover || '',
+            item.cover || '',
+            streamUrl,
+            item.plot || 'Importado via Xtream'
+          ]
+        )
+
+        series++
       } catch (err) {
-        console.log('ERRO IMPORT SERIES:', err.message)
         skipped++
       }
     }
@@ -4509,6 +4461,534 @@ app.get('/proxy-stream', async (req, res) => {
     }
   }
 })
+
+
+async function getXtreamUser(username = '', password = '') {
+  const result = await pool.query(
+    `
+    SELECT id, name, email, password, role, status, plan, max_connections, expires_at
+    FROM users
+    WHERE LOWER(email) = LOWER($1)
+      AND password = $2
+      AND role = 'client'
+    LIMIT 1
+    `,
+    [
+      String(username || '').trim(),
+      String(password || '').trim()
+    ]
+  )
+
+  if (result.rows.length === 0) {
+    return null
+  }
+
+  const user = result.rows[0]
+
+  if (String(user.status || '').trim() !== 'active') {
+    return null
+  }
+
+  if (user.expires_at && new Date(user.expires_at).getTime() < Date.now()) {
+    return null
+  }
+
+  return user
+}
+
+function getPublicBaseUrl(req) {
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https'
+  const host = req.headers['x-forwarded-host'] || req.get('host')
+
+  return `${proto}://${host}`
+}
+
+function getMovieExtension(video = '') {
+  const lower = String(video || '').toLowerCase()
+
+  if (lower.includes('.mkv')) return 'mkv'
+  if (lower.includes('.avi')) return 'avi'
+  if (lower.includes('.mov')) return 'mov'
+  if (lower.includes('.m3u8')) return 'm3u8'
+  if (lower.includes('.ts')) return 'ts'
+
+  return 'mp4'
+}
+
+function cleanXtreamSeriesName(title = '') {
+  return String(title || '')
+    .replace(/S\d{1,2}E\d{1,3}/gi, '')
+    .replace(/S\d{1,2}\sE\d{1,3}/gi, '')
+    .replace(/TEMPORADA\s?\d+/gi, '')
+    .replace(/EPISODIO\s?\d+/gi, '')
+    .replace(/EPISÓDIO\s?\d+/gi, '')
+    .replace(/EP\s?\d+/gi, '')
+    .replace(/\(\d{4}\)/g, '')
+    .replace(/\[\d{4}\]/g, '')
+    .replace(/\s+-\s+.*$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function getXtreamSeason(title = '') {
+  const match =
+    String(title || '').match(/S(\d{1,2})E\d{1,3}/i) ||
+    String(title || '').match(/TEMPORADA\s?(\d{1,2})/i)
+
+  return match ? Number(match[1]) : 1
+}
+
+function getXtreamEpisode(title = '') {
+  const match =
+    String(title || '').match(/S\d{1,2}E(\d{1,3})/i) ||
+    String(title || '').match(/EPISODIO\s?(\d{1,3})/i) ||
+    String(title || '').match(/EPISÓDIO\s?(\d{1,3})/i) ||
+    String(title || '').match(/EP\s?(\d{1,3})/i)
+
+  return match ? Number(match[1]) : 1
+}
+
+app.get('/player_api.php', async (req, res) => {
+  try {
+    const username = req.query.username || ''
+    const password = req.query.password || ''
+    const action = req.query.action || ''
+
+    const user = await getXtreamUser(username, password)
+
+    if (!user) {
+      return res.json({
+        user_info: {
+          auth: 0,
+          status: 'Disabled'
+        },
+        server_info: {}
+      })
+    }
+
+    const baseUrl = getPublicBaseUrl(req)
+    const now = Math.floor(Date.now() / 1000)
+    const expDate = user.expires_at
+      ? Math.floor(new Date(user.expires_at).getTime() / 1000)
+      : null
+
+    if (!action) {
+      return res.json({
+        user_info: {
+          username: user.email,
+          password: user.password,
+          message: 'Nexora TV',
+          auth: 1,
+          status: 'Active',
+          exp_date: expDate,
+          is_trial: user.plan === 'teste' ? '1' : '0',
+          active_cons: 0,
+          created_at: now,
+          max_connections: String(user.max_connections || 1),
+          allowed_output_formats: ['m3u8', 'ts', 'mp4']
+        },
+        server_info: {
+          url: req.get('host'),
+          port: '443',
+          https_port: '443',
+          server_protocol: 'https',
+          rtmp_port: '0',
+          timezone: 'America/Sao_Paulo',
+          timestamp_now: now,
+          time_now: new Date().toISOString()
+        }
+      })
+    }
+
+    if (action === 'get_live_categories') {
+      const result = await pool.query(`
+        SELECT category, MIN(id)::INTEGER AS category_id
+        FROM channels
+        GROUP BY category
+        ORDER BY category ASC
+      `)
+
+      return res.json(result.rows.map(row => ({
+        category_id: String(row.category_id || 0),
+        category_name: row.category || 'TV',
+        parent_id: 0
+      })))
+    }
+
+    if (action === 'get_vod_categories') {
+      return res.json([
+        {
+          category_id: '1',
+          category_name: 'Filmes',
+          parent_id: 0
+        }
+      ])
+    }
+
+    if (action === 'get_series_categories') {
+      return res.json([
+        {
+          category_id: '2',
+          category_name: 'Séries',
+          parent_id: 0
+        }
+      ])
+    }
+
+    if (action === 'get_live_streams') {
+      const result = await pool.query(`
+        SELECT id, name, url, category, logo
+        FROM channels
+        WHERE is_online = true
+        ORDER BY name ASC
+        LIMIT 5000
+      `)
+
+      return res.json(result.rows.map((item, index) => ({
+        num: index + 1,
+        name: item.name || 'Canal',
+        stream_type: 'live',
+        stream_id: item.id,
+        stream_icon: item.logo || '',
+        epg_channel_id: '',
+        added: String(now),
+        category_id: String(Math.abs((item.category || 'TV').split('').reduce((a, c) => a + c.charCodeAt(0), 0))),
+        custom_sid: '',
+        tv_archive: 0,
+        direct_source: `${baseUrl}/live/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.m3u8}`,
+        tv_archive_duration: 0
+      })))
+    }
+
+    if (action === 'get_vod_streams') {
+      const result = await pool.query(`
+        SELECT id, title, year, image, video, description
+        FROM movies
+        WHERE
+          LOWER(COALESCE(category, '')) NOT LIKE '%series%'
+          AND LOWER(COALESCE(category, '')) NOT LIKE '%séries%'
+          AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
+        ORDER BY title ASC
+        LIMIT 5000
+      `)
+
+      return res.json(result.rows.map((item, index) => ({
+        num: index + 1,
+        name: item.title || 'Filme',
+        title: item.title || 'Filme',
+        year: item.year || '',
+        stream_type: 'movie',
+        stream_id: item.id,
+        stream_icon: item.image || '',
+        rating: '',
+        rating_5based: 0,
+        added: String(now),
+        category_id: '1',
+        container_extension: getMovieExtension(item.video),
+        custom_sid: '',
+        direct_source: `${baseUrl}/movie/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`
+      })))
+    }
+
+    if (action === 'get_series') {
+      const result = await pool.query(`
+        SELECT id, title, year, image, video, description
+        FROM movies
+        WHERE
+          category = 'Series'
+          OR LOWER(COALESCE(video, '')) LIKE '%/series/%'
+          OR LOWER(COALESCE(title, '')) LIKE '%temporada%'
+          OR LOWER(COALESCE(title, '')) LIKE '%episodio%'
+          OR LOWER(COALESCE(title, '')) LIKE '%episódio%'
+          OR LOWER(COALESCE(title, '')) ~ 's[0-9]{1,2}e[0-9]{1,3}'
+        ORDER BY title ASC
+        LIMIT 5000
+      `)
+
+      const grouped = new Map()
+
+      for (const item of result.rows) {
+        const name = cleanXtreamSeriesName(item.title) || item.title || 'Série'
+
+        if (!grouped.has(name)) {
+          grouped.set(name, {
+            num: grouped.size + 1,
+            name,
+            title: name,
+            year: item.year || '',
+            series_id: item.id,
+            cover: item.image || '',
+            plot: item.description || '',
+            cast: '',
+            director: '',
+            genre: 'Séries',
+            releaseDate: '',
+            last_modified: String(now),
+            rating: '',
+            rating_5based: 0,
+            backdrop_path: [],
+            youtube_trailer: '',
+            episode_run_time: '',
+            category_id: '2'
+          })
+        }
+      }
+
+      return res.json(Array.from(grouped.values()))
+    }
+
+    if (action === 'get_vod_info') {
+      const vodId = Number(req.query.vod_id || req.query.movie_id || 0)
+
+      const result = await pool.query(
+        `
+        SELECT id, title, year, image, banner, video, description
+        FROM movies
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [vodId]
+      )
+
+      const item = result.rows[0]
+
+      if (!item) return res.json({ info: {}, movie_data: {} })
+
+      return res.json({
+        info: {
+          movie_image: item.image || '',
+          backdrop_path: item.banner ? [item.banner] : [],
+          plot: item.description || '',
+          genre: 'Filmes',
+          rating: '',
+          releasedate: item.year || ''
+        },
+        movie_data: {
+          stream_id: item.id,
+          name: item.title || 'Filme',
+          title: item.title || 'Filme',
+          year: item.year || '',
+          added: String(now),
+          category_id: '1',
+          container_extension: getMovieExtension(item.video),
+          custom_sid: '',
+          direct_source: `${baseUrl}/movie/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`
+        }
+      })
+    }
+
+    if (action === 'get_series_info') {
+      const seriesId = Number(req.query.series_id || 0)
+
+      const baseResult = await pool.query(
+        `
+        SELECT title
+        FROM movies
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [seriesId]
+      )
+
+      if (baseResult.rows.length === 0) {
+        return res.json({ info: {}, episodes: {} })
+      }
+
+      const baseTitle = cleanXtreamSeriesName(baseResult.rows[0].title)
+
+      const result = await pool.query(
+        `
+        SELECT id, title, year, image, banner, video, description
+        FROM movies
+        WHERE
+          category = 'Series'
+          OR LOWER(COALESCE(video, '')) LIKE '%/series/%'
+          OR LOWER(COALESCE(title, '')) LIKE '%temporada%'
+          OR LOWER(COALESCE(title, '')) LIKE '%episodio%'
+          OR LOWER(COALESCE(title, '')) LIKE '%episódio%'
+          OR LOWER(COALESCE(title, '')) ~ 's[0-9]{1,2}e[0-9]{1,3}'
+        ORDER BY title ASC
+        LIMIT 5000
+        `
+      )
+
+      const episodes = {}
+      let cover = ''
+
+      for (const item of result.rows) {
+        const name = cleanXtreamSeriesName(item.title)
+
+        if (normalizeText(name) !== normalizeText(baseTitle)) continue
+
+        const season = getXtreamSeason(item.title)
+        const episodeNum = getXtreamEpisode(item.title)
+
+        if (!episodes[season]) episodes[season] = []
+
+        if (!cover && item.image) cover = item.image
+
+        episodes[season].push({
+          id: item.id,
+          episode_num: episodeNum,
+          title: item.title,
+          container_extension: getMovieExtension(item.video),
+          info: {
+            movie_image: item.image || '',
+            plot: item.description || ''
+          },
+          custom_sid: '',
+          added: String(now),
+          season,
+          direct_source: `${baseUrl}/series/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`
+        })
+      }
+
+      return res.json({
+        info: {
+          name: baseTitle,
+          title: baseTitle,
+          cover,
+          plot: '',
+          cast: '',
+          director: '',
+          genre: 'Séries',
+          releaseDate: '',
+          rating: ''
+        },
+        episodes
+      })
+    }
+
+    return res.json([])
+  } catch (err) {
+    console.log('ERRO PLAYER API:', err)
+
+    res.status(500).json({
+      error: 'erro player api'
+    })
+  }
+})
+
+async function streamStoredContent(req, res, type) {
+  try {
+    const username = decodeURIComponent(req.params.username || '')
+    const password = decodeURIComponent(req.params.password || '')
+    const id = Number(req.params.id || 0)
+
+    const user = await getXtreamUser(username, password)
+
+    if (!user) {
+      return res.status(401).send('login inválido')
+    }
+
+    let query = ''
+    if (type === 'live') {
+      query = 'SELECT url AS video FROM channels WHERE id = $1 LIMIT 1'
+    } else {
+      query = 'SELECT video FROM movies WHERE id = $1 LIMIT 1'
+    }
+
+    const result = await pool.query(query, [id])
+
+    if (result.rows.length === 0 || !result.rows[0].video) {
+      return res.status(404).send('conteúdo não encontrado')
+    }
+
+    return res.redirect(result.rows[0].video)
+  } catch (err) {
+    console.log('ERRO STREAM CONTENT:', err)
+    res.status(500).send('erro stream')
+  }
+}
+
+app.get('/live/:username/:password/:id.m3u8', async (req, res) => {
+  return streamStoredContent(req, res, 'live')
+})
+
+app.get('/live/:username/:password/:id.ts', async (req, res) => {
+  return streamStoredContent(req, res, 'live')
+})
+
+app.get('/movie/:username/:password/:id.:ext', async (req, res) => {
+  return streamStoredContent(req, res, 'movie')
+})
+
+app.get('/series/:username/:password/:id.:ext', async (req, res) => {
+  return streamStoredContent(req, res, 'series')
+})
+
+app.get('/get.php', async (req, res) => {
+  try {
+    const username = req.query.username || ''
+    const password = req.query.password || ''
+    const type = req.query.type || 'm3u_plus'
+    const output = req.query.output || 'm3u8'
+
+    const user = await getXtreamUser(username, password)
+
+    if (!user) {
+      return res.status(401).send('login inválido')
+    }
+
+    const baseUrl = getPublicBaseUrl(req)
+    const lines = ['#EXTM3U']
+
+    const channels = await pool.query(`
+      SELECT id, name, category, logo
+      FROM channels
+      WHERE is_online = true
+      ORDER BY name ASC
+      LIMIT 5000
+    `)
+
+    for (const item of channels.rows) {
+      lines.push(`#EXTINF:-1 tvg-id="" tvg-name="${item.name}" tvg-logo="${item.logo || ''}" group-title="${item.category || 'TV'}",${item.name}`)
+      lines.push(`${baseUrl}/live/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.${output === 'ts' ? 'ts' : 'm3u8'}`)
+    }
+
+    const movies = await pool.query(`
+      SELECT id, title, image, video
+      FROM movies
+      WHERE
+        LOWER(COALESCE(category, '')) NOT LIKE '%series%'
+        AND LOWER(COALESCE(category, '')) NOT LIKE '%séries%'
+        AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
+      ORDER BY title ASC
+      LIMIT 5000
+    `)
+
+    for (const item of movies.rows) {
+      lines.push(`#EXTINF:-1 tvg-id="" tvg-name="${item.title}" tvg-logo="${item.image || ''}" group-title="Filmes",${item.title}`)
+      lines.push(`${baseUrl}/movie/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`)
+    }
+
+    const series = await pool.query(`
+      SELECT id, title, image, video
+      FROM movies
+      WHERE
+        category = 'Series'
+        OR LOWER(COALESCE(video, '')) LIKE '%/series/%'
+        OR LOWER(COALESCE(title, '')) LIKE '%temporada%'
+        OR LOWER(COALESCE(title, '')) LIKE '%episodio%'
+        OR LOWER(COALESCE(title, '')) LIKE '%episódio%'
+        OR LOWER(COALESCE(title, '')) ~ 's[0-9]{1,2}e[0-9]{1,3}'
+      ORDER BY title ASC
+      LIMIT 5000
+    `)
+
+    for (const item of series.rows) {
+      lines.push(`#EXTINF:-1 tvg-id="" tvg-name="${item.title}" tvg-logo="${item.image || ''}" group-title="Séries",${item.title}`)
+      lines.push(`${baseUrl}/series/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`)
+    }
+
+    res.setHeader('Content-Type', type === 'm3u_plus' ? 'audio/x-mpegurl' : 'text/plain')
+    return res.send(lines.join('\n'))
+  } catch (err) {
+    console.log('ERRO GET PHP:', err)
+    res.status(500).send('erro m3u')
+  }
+})
+
 
 app.get('/', (req, res) => {
   res.send('IPTV SERVER ONLINE')
