@@ -418,11 +418,11 @@ M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username |
           </button>
 
           <button
-            style={styles.orangeButton}
+            style={styles.testButton}
             onClick={createTest5h}
             disabled={loading}
           >
-            Teste 5h
+            Gerar teste 5 horas
           </button>
         </div>
       </div>
