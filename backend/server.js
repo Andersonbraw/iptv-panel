@@ -4818,7 +4818,9 @@ app.get('/player_api.php', async (req, res) => {
         category_id: getXtreamCategoryId(detectLiveGroupByName(item.name, item.category)),
         custom_sid: '',
         tv_archive: 0,
-        direct_source: `${baseUrl}/live/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.m3u8}`,
+        direct_source: item.url || `${baseUrl}/live/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.ts`,
+        stream_url: item.url || `${baseUrl}/live/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.ts`,
+        container_extension: 'ts',
         tv_archive_duration: 0
       })))
     }
@@ -5059,6 +5061,12 @@ async function streamStoredContent(req, res, type) {
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Cache-Control', 'no-cache')
 
+    if (type !== 'live') {
+      return res.redirect(302, streamUrl)
+    }
+
+    // Para apps externos, o canal fica mais compatível com redirect direto.
+    // Se o app não seguir redirect, ele ainda recebe o link original pelo direct_source no player_api.php.
     return res.redirect(302, streamUrl)
   } catch (err) {
     console.log('ERRO STREAM CONTENT:', err)
@@ -5071,6 +5079,10 @@ app.get('/live/:username/:password/:id.m3u8', async (req, res) => {
 })
 
 app.get('/live/:username/:password/:id.ts', async (req, res) => {
+  return streamStoredContent(req, res, 'live')
+})
+
+app.get('/live/:username/:password/:id', async (req, res) => {
   return streamStoredContent(req, res, 'live')
 })
 
