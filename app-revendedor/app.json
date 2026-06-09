@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Nexora Revendedor",
+    "slug": "nexora-revendedor",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "nexorareseller",
+    "userInterfaceStyle": "dark",
+    "android": {
+      "package": "com.anderson.nexorareseller",
+      "versionCode": 1,
+      "permissions": [
+        "INTERNET"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#000814"
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "0c39d3d3-2169-4bd8-a4ff-f65e5ddeb543"
+      }
+    }
+  }
+}
