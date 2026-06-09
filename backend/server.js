@@ -523,6 +523,127 @@ function normalizeText(value = '') {
     .replace(/[\u0300-\u036f]/g, '')
 }
 
+
+function cleanCategoryName(value = '') {
+  let name = String(value || '')
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(/\([^\)]*\)/g, '')
+    .replace(/[_|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  const normalized = normalizeText(name)
+
+  if (!name || /^\d+$/.test(name) || /^categoria\s+\d+$/i.test(name)) {
+    return 'Outros'
+  }
+
+  if (normalized.includes('lancamento') || normalized.includes('lancamentos')) return 'Lançamentos'
+  if (normalized.includes('acao') || normalized.includes('action')) return 'Ação'
+  if (normalized.includes('aventura') || normalized.includes('adventure')) return 'Aventura'
+  if (normalized.includes('comedia') || normalized.includes('comedy')) return 'Comédia'
+  if (normalized.includes('drama')) return 'Drama'
+  if (normalized.includes('terror') || normalized.includes('horror')) return 'Terror'
+  if (normalized.includes('suspense') || normalized.includes('thriller')) return 'Suspense'
+  if (normalized.includes('romance')) return 'Romance'
+  if (normalized.includes('ficcao') || normalized.includes('sci fi') || normalized.includes('scifi')) return 'Ficção Científica'
+  if (normalized.includes('fantasia') || normalized.includes('fantasy')) return 'Fantasia'
+  if (normalized.includes('animacao') || normalized.includes('animation')) return 'Animação'
+  if (normalized.includes('infantil') || normalized.includes('kids')) return 'Infantil'
+  if (normalized.includes('documentario') || normalized.includes('documentary')) return 'Documentário'
+  if (normalized.includes('nacional') || normalized.includes('brasil')) return 'Nacionais'
+  if (normalized.includes('dublado')) return 'Dublados'
+  if (normalized.includes('legendado') || normalized.includes('legendas')) return 'Legendados'
+  if (normalized.includes('religioso') || normalized.includes('gospel')) return 'Religiosos'
+  if (normalized.includes('show') || normalized.includes('musica')) return 'Shows e Música'
+
+  return name
+}
+
+function detectVodCategory(item = {}) {
+  const source = normalizeText(`${item.category || ''} ${item.title || item.name || ''}`)
+
+  if (source.includes('lancamento') || source.includes('lancamentos')) return 'Lançamentos'
+  if (source.includes('acao') || source.includes('action')) return 'Ação'
+  if (source.includes('aventura') || source.includes('adventure')) return 'Aventura'
+  if (source.includes('comedia') || source.includes('comedy')) return 'Comédia'
+  if (source.includes('drama')) return 'Drama'
+  if (source.includes('terror') || source.includes('horror')) return 'Terror'
+  if (source.includes('suspense') || source.includes('thriller')) return 'Suspense'
+  if (source.includes('romance')) return 'Romance'
+  if (source.includes('ficcao') || source.includes('sci fi') || source.includes('scifi')) return 'Ficção Científica'
+  if (source.includes('fantasia') || source.includes('fantasy')) return 'Fantasia'
+  if (source.includes('animacao') || source.includes('animation')) return 'Animação'
+  if (source.includes('infantil') || source.includes('kids')) return 'Infantil'
+  if (source.includes('documentario') || source.includes('documentary')) return 'Documentário'
+  if (source.includes('nacional') || source.includes('brasil')) return 'Nacionais'
+  if (source.includes('dublado')) return 'Dublados'
+  if (source.includes('legendado') || source.includes('legendas')) return 'Legendados'
+  if (source.includes('religioso') || source.includes('gospel')) return 'Religiosos'
+  if (source.includes('show') || source.includes('musica')) return 'Shows e Música'
+
+  return cleanCategoryName(item.category || 'Filmes')
+}
+
+function detectSeriesCategory(item = {}) {
+  const source = normalizeText(`${item.category || ''} ${item.title || item.name || ''}`)
+
+  if (source.includes('lancamento') || source.includes('lancamentos')) return 'Séries Lançamentos'
+  if (source.includes('acao') || source.includes('action')) return 'Séries Ação'
+  if (source.includes('aventura') || source.includes('adventure')) return 'Séries Aventura'
+  if (source.includes('comedia') || source.includes('comedy')) return 'Séries Comédia'
+  if (source.includes('drama')) return 'Séries Drama'
+  if (source.includes('terror') || source.includes('horror')) return 'Séries Terror'
+  if (source.includes('suspense') || source.includes('thriller')) return 'Séries Suspense'
+  if (source.includes('romance')) return 'Séries Romance'
+  if (source.includes('ficcao') || source.includes('sci fi') || source.includes('scifi')) return 'Séries Ficção Científica'
+  if (source.includes('fantasia') || source.includes('fantasy')) return 'Séries Fantasia'
+  if (source.includes('animacao') || source.includes('animation')) return 'Séries Animação'
+  if (source.includes('infantil') || source.includes('kids')) return 'Séries Infantil'
+  if (source.includes('documentario') || source.includes('documentary')) return 'Séries Documentário'
+  if (source.includes('nacional') || source.includes('brasil')) return 'Séries Nacionais'
+  if (source.includes('dublado')) return 'Séries Dubladas'
+  if (source.includes('legendado') || source.includes('legendas')) return 'Séries Legendadas'
+
+  const cleaned = cleanCategoryName(item.category || 'Séries')
+  return cleaned.toLowerCase().startsWith('séries') ? cleaned : `Séries ${cleaned}`
+}
+
+function getStableCategoryId(prefix, name = '') {
+  const text = `${prefix}:${name}`
+  let hash = 0
+
+  for (let i = 0; i < text.length; i++) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i)
+    hash |= 0
+  }
+
+  const base = prefix === 'live' ? 1000 : prefix === 'vod' ? 2000 : 3000
+  return String(base + (Math.abs(hash) % 899))
+}
+
+function makeCategoryList(rows, detector, prefix) {
+  const map = new Map()
+
+  for (const row of rows || []) {
+    const name = detector(row)
+    const id = getStableCategoryId(prefix, name)
+
+    if (!map.has(id)) {
+      map.set(id, {
+        category_id: id,
+        category_name: name,
+        parent_id: 0
+      })
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) =>
+    String(a.category_name).localeCompare(String(b.category_name))
+  )
+}
+
+
 async function fetchM3UText(playlistUrl) {
   console.log('M3U URL RECEBIDA:', playlistUrl)
   const fixedUrl =
@@ -4466,8 +4587,12 @@ app.post('/admin/fix-series-categories', auth, adminOnly, async (req, res) => {
   try {
     const before = await pool.query(`
       SELECT
-        COUNT(*) FILTER (WHERE category = 'Series')::INTEGER AS series_before,
-        COUNT(*) FILTER (WHERE category <> 'Series')::INTEGER AS movies_before
+        COUNT(*) FILTER (WHERE
+          category = 'Series'
+          OR LOWER(COALESCE(video, '')) LIKE '%/series/%')::INTEGER AS series_before,
+        COUNT(*) FILTER (WHERE
+          category <> 'Series'
+          AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%')::INTEGER AS movies_before
       FROM movies
     `)
 
@@ -4500,8 +4625,12 @@ app.post('/admin/fix-series-categories', auth, adminOnly, async (req, res) => {
 
     const after = await pool.query(`
       SELECT
-        COUNT(*) FILTER (WHERE category = 'Series')::INTEGER AS series_after,
-        COUNT(*) FILTER (WHERE category <> 'Series')::INTEGER AS movies_after
+        COUNT(*) FILTER (WHERE
+          category = 'Series'
+          OR LOWER(COALESCE(video, '')) LIKE '%/series/%')::INTEGER AS series_after,
+        COUNT(*) FILTER (WHERE
+          category <> 'Series'
+          AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%')::INTEGER AS movies_after
       FROM movies
     `)
 
@@ -5491,47 +5620,50 @@ app.get('/player_api.php', async (req, res) => {
         FROM channels
         WHERE is_online = true
         ORDER BY name ASC
-        LIMIT 5000
+        LIMIT 10000
       `)
 
-      const groups = new Map()
-
-      for (const row of result.rows) {
-        const groupName = detectLiveGroupByName(row.name, row.category)
-        const groupId = getXtreamCategoryId(groupName)
-
-        if (!groups.has(groupId)) {
-          groups.set(groupId, {
-            category_id: groupId,
-            category_name: groupName,
-            parent_id: 0
-          })
-        }
-      }
-
-      return res.json(Array.from(groups.values()).sort((a, b) =>
-        String(a.category_name).localeCompare(String(b.category_name))
+      return res.json(makeCategoryList(
+        result.rows,
+        row => detectLiveGroupByName(row.name, row.category),
+        'live'
       ))
     }
 
     if (action === 'get_vod_categories') {
-      return res.json([
-        {
-          category_id: '1',
-          category_name: 'Filmes',
-          parent_id: 0
-        }
-      ])
+      const result = await pool.query(`
+        SELECT title, category, video
+        FROM movies
+        WHERE
+          category <> 'Series'
+          AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
+        ORDER BY title ASC
+        LIMIT 20000
+      `)
+
+      return res.json(makeCategoryList(
+        result.rows,
+        detectVodCategory,
+        'vod'
+      ))
     }
 
     if (action === 'get_series_categories') {
-      return res.json([
-        {
-          category_id: '2',
-          category_name: 'Séries',
-          parent_id: 0
-        }
-      ])
+      const result = await pool.query(`
+        SELECT title, category, video
+        FROM movies
+        WHERE
+          category = 'Series'
+          OR LOWER(COALESCE(video, '')) LIKE '%/series/%'
+        ORDER BY title ASC
+        LIMIT 20000
+      `)
+
+      return res.json(makeCategoryList(
+        result.rows,
+        detectSeriesCategory,
+        'series'
+      ))
     }
 
     if (action === 'get_live_streams') {
@@ -5551,7 +5683,7 @@ app.get('/player_api.php', async (req, res) => {
         stream_icon: item.logo || '',
         epg_channel_id: '',
         added: String(now),
-        category_id: getXtreamCategoryId(detectLiveGroupByName(item.name, item.category)),
+        category_id: getStableCategoryId('live', detectLiveGroupByName(item.name, item.category)),
         custom_sid: '',
         tv_archive: 0,
         direct_source: item.url || `${baseUrl}/live/${encodeURIComponent(user.xtream_username || getShortLoginFromEmail(user.email) || user.email)}/${encodeURIComponent(user.password)}/${item.id}.ts`,
