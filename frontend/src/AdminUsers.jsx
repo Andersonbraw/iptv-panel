@@ -405,18 +405,22 @@ Senha: ${user.password || 'senha do cliente'}
   function copyLogin() {
     if (!createdLogin) return
 
+    const shortLogin =
+      createdLogin.xtream_username ||
+      String(createdLogin.email || '').replace(/\D/g, '')
+
     navigator.clipboard.writeText(`
 Nome: ${createdLogin.name}
 
 Email: ${createdLogin.email}
 
-Login Xtream: ${createdLogin.xtream_username || String(createdLogin.email || '').replace(/\D/g, '')}
+Login Xtream: ${shortLogin}
 
 Senha: ${createdLogin.password}
 
 Servidor: ${API}
 
-M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username || String(createdLogin.email || '').replace(/\D/g, ''))}&password=${encodeURIComponent(createdLogin.password)}&type=m3u_plus&output=mpegts
+M3U: ${API}/get.php?username=${encodeURIComponent(shortLogin)}&password=${encodeURIComponent(createdLogin.password)}&type=m3u_plus&output=mpegts
     `)
 
     alert('Login copiado')
@@ -521,7 +525,7 @@ M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username |
 
           <input
             readOnly
-            value={`Login Xtream: ${createdLogin.xtream_username || String(createdLogin.email || '').replace(/\\D/g, '')}`}
+            value={`Login Xtream: ${createdLogin.xtream_username || String(createdLogin.email || '').replace(/\D/g, '')}`}
             style={styles.copyInput}
           />
 
@@ -539,7 +543,7 @@ M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username |
 
           <input
             readOnly
-            value={`M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username || String(createdLogin.email || '').replace(/\\D/g, ''))}&password=${encodeURIComponent(createdLogin.password)}&type=m3u_plus&output=mpegts`}
+            value={`M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username || String(createdLogin.email || '').replace(/\D/g, ''))}&password=${encodeURIComponent(createdLogin.password)}&type=m3u_plus&output=mpegts`}
             style={styles.copyInput}
           />
 

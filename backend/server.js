@@ -2786,6 +2786,11 @@ app.post('/admin/users/create-random', auth, adminOnly, async (req, res) => {
         req.body.name
       )
 
+    const xtreamUsername =
+      await generateUniqueXtreamUsername(
+        getShortLoginFromEmail(login.email)
+      )
+
     const result =
       await pool.query(
         `
@@ -2798,15 +2803,17 @@ app.post('/admin/users/create-random', auth, adminOnly, async (req, res) => {
           status,
           plan,
           max_connections,
-          expires_at
+          expires_at,
+          xtream_username
         )
-        VALUES ($1,$2,$3,'client','active','premium',1,NOW() + INTERVAL '30 days')
-        RETURNING id, name, email, role, status, plan, max_connections, expires_at
+        VALUES ($1,$2,$3,'client','active','premium',1,NOW() + INTERVAL '30 days',$4)
+        RETURNING id, name, email, password, xtream_username, role, status, plan, max_connections, expires_at
         `,
         [
           login.name,
           login.email,
-          login.password
+          login.password,
+          xtreamUsername
         ]
       )
 
@@ -2823,8 +2830,9 @@ app.post('/admin/users/create-random', auth, adminOnly, async (req, res) => {
       success: true,
       user: result.rows[0],
       login: {
-        email: login.email,
-        password: login.password
+        email: result.rows[0].email,
+        xtream_username: result.rows[0].xtream_username || getShortLoginFromEmail(result.rows[0].email),
+        password: result.rows[0].password
       }
     })
   } catch (err) {
