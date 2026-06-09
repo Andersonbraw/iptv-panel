@@ -127,6 +127,24 @@ async function initDb() {
   `)
 
   await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS xtream_username TEXT
+  `)
+
+  await pool.query(`
+    UPDATE users
+    SET xtream_username = REGEXP_REPLACE(email, '[^0-9]', '', 'g')
+    WHERE role = 'client'
+      AND (xtream_username IS NULL OR xtream_username = '')
+      AND REGEXP_REPLACE(email, '[^0-9]', '', 'g') <> ''
+  `)
+
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_xtream_username_unique
+    ON users(LOWER(xtream_username))
+    WHERE xtream_username IS NOT NULL AND xtream_username <> ''
+  `)
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS user_sessions (
       id SERIAL PRIMARY KEY,
       user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -425,6 +443,38 @@ function generateRandomLogin(customName = '') {
 
     password
   }
+}
+
+function getShortLoginFromEmail(email = '') {
+  return String(email || '').replace(/\D/g, '')
+}
+
+async function generateUniqueXtreamUsername(preferred = '') {
+  let candidate = String(preferred || '').replace(/\D/g, '').trim()
+
+  if (!candidate) {
+    candidate = String(Math.floor(100000 + Math.random() * 900000))
+  }
+
+  for (let i = 0; i < 40; i++) {
+    const result = await pool.query(
+      `
+      SELECT id
+      FROM users
+      WHERE LOWER(COALESCE(xtream_username, '')) = LOWER($1)
+      LIMIT 1
+      `,
+      [candidate]
+    )
+
+    if (result.rows.length === 0) {
+      return candidate
+    }
+
+    candidate = String(Math.floor(100000 + Math.random() * 900000))
+  }
+
+  return String(Date.now()).slice(-8)
 }
 
 function normalizeGithubUrl(url) {
@@ -1338,6 +1388,7 @@ app.get('/reseller/dashboard', auth, adminOrReseller, async (req, res) => {
           id,
           name,
           email,
+          xtream_username,
           role,
           status,
           plan,
@@ -1645,7 +1696,7 @@ app.post('/reseller/clients/:id/reset-password', auth, adminOrReseller, async (r
       WHERE id = $2
         AND reseller_parent_id = $3
         AND role = 'client'
-      RETURNING id, name, email
+      RETURNING id, name, email, xtream_username
       `,
       [
         password,
@@ -1665,6 +1716,7 @@ app.post('/reseller/clients/:id/reset-password', auth, adminOrReseller, async (r
       login: {
         name: result.rows[0].name,
         email: result.rows[0].email,
+        xtream_username: result.rows[0].xtream_username || getShortLoginFromEmail(result.rows[0].email),
         password
       }
     })
@@ -2129,6 +2181,7 @@ app.get('/admin/resellers/:id/clients', auth, adminOnly, async (req, res) => {
         id,
         name,
         email,
+        xtream_username,
         role,
         status,
         plan,
@@ -2194,6 +2247,118 @@ app.patch('/admin/resellers/clients/:id/name', auth, adminOnly, async (req, res)
   }
 })
 
+
+app.patch('/admin/resellers/clients/:id/xtream-login', auth, adminOnly, async (req, res) => {
+  try {
+    const login = String(req.body.xtream_username || req.body.login || '')
+      .replace(/\D/g, '')
+      .trim()
+
+    if (!login || login.length < 3) {
+      return res.status(400).json({
+        error: 'login curto inválido'
+      })
+    }
+
+    const duplicate = await pool.query(
+      `
+      SELECT id
+      FROM users
+      WHERE LOWER(COALESCE(xtream_username, '')) = LOWER($1)
+        AND id <> $2
+      LIMIT 1
+      `,
+      [login, req.params.id]
+    )
+
+    if (duplicate.rows.length > 0) {
+      return res.status(400).json({
+        error: 'esse login já está em uso'
+      })
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET xtream_username = $1
+      WHERE id = $2
+        AND role = 'client'
+      RETURNING id, name, email, xtream_username, status, plan, max_connections, expires_at
+      `,
+      [login, req.params.id]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'cliente não encontrado'
+      })
+    }
+
+    res.json(result.rows[0])
+  } catch (err) {
+    console.log('ERRO ADMIN XTREAM LOGIN:', err)
+    res.status(500).json({
+      error: 'erro ao editar login'
+    })
+  }
+})
+
+app.patch('/reseller/clients/:id/xtream-login', auth, adminOrReseller, async (req, res) => {
+  try {
+    const login = String(req.body.xtream_username || req.body.login || '')
+      .replace(/\D/g, '')
+      .trim()
+
+    if (!login || login.length < 3) {
+      return res.status(400).json({
+        error: 'login curto inválido'
+      })
+    }
+
+    const duplicate = await pool.query(
+      `
+      SELECT id
+      FROM users
+      WHERE LOWER(COALESCE(xtream_username, '')) = LOWER($1)
+        AND id <> $2
+      LIMIT 1
+      `,
+      [login, req.params.id]
+    )
+
+    if (duplicate.rows.length > 0) {
+      return res.status(400).json({
+        error: 'esse login já está em uso'
+      })
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET xtream_username = $1
+      WHERE id = $2
+        AND reseller_parent_id = $3
+        AND role = 'client'
+      RETURNING id, name, email, xtream_username, status, plan, max_connections, expires_at
+      `,
+      [login, req.params.id, req.user.id]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'cliente não encontrado'
+      })
+    }
+
+    res.json(result.rows[0])
+  } catch (err) {
+    console.log('ERRO RESELLER XTREAM LOGIN:', err)
+    res.status(500).json({
+      error: 'erro ao editar login'
+    })
+  }
+})
+
 app.post('/admin/resellers/clients/:id/reset-password', auth, adminOnly, async (req, res) => {
   try {
     const password = generateSimplePassword()
@@ -2204,7 +2369,7 @@ app.post('/admin/resellers/clients/:id/reset-password', auth, adminOnly, async (
       SET password = $1
       WHERE id = $2
         AND role = 'client'
-      RETURNING id, name, email
+      RETURNING id, name, email, xtream_username
       `,
       [
         password,
@@ -2223,6 +2388,7 @@ app.post('/admin/resellers/clients/:id/reset-password', auth, adminOnly, async (
       login: {
         name: result.rows[0].name,
         email: result.rows[0].email,
+        xtream_username: result.rows[0].xtream_username || getShortLoginFromEmail(result.rows[0].email),
         password
       }
     })
@@ -2359,6 +2525,7 @@ app.get('/admin/users', auth, adminOnly, async (req, res) => {
           users.id,
           users.name,
           users.email,
+          users.xtream_username,
           users.role,
           users.status,
           users.plan,
@@ -2712,6 +2879,7 @@ app.get('/me', auth, async (req, res) => {
           id,
           name,
           email,
+          xtream_username,
           role,
           status,
           reseller_parent_id,
@@ -4464,17 +4632,23 @@ app.get('/proxy-stream', async (req, res) => {
 
 
 async function getXtreamUser(username = '', password = '') {
+  const login = String(username || '').trim()
+
   const result = await pool.query(
     `
-    SELECT id, name, email, password, role, status, plan, max_connections, expires_at
+    SELECT id, name, email, password, role, status, plan, max_connections, expires_at, xtream_username
     FROM users
-    WHERE LOWER(email) = LOWER($1)
+    WHERE (
+        LOWER(email) = LOWER($1)
+        OR LOWER(COALESCE(xtream_username, '')) = LOWER($1)
+        OR REGEXP_REPLACE(email, '[^0-9]', '', 'g') = $1
+      )
       AND password = $2
       AND role = 'client'
     LIMIT 1
     `,
     [
-      String(username || '').trim(),
+      login,
       String(password || '').trim()
     ]
   )
@@ -4491,6 +4665,10 @@ async function getXtreamUser(username = '', password = '') {
 
   if (user.expires_at && new Date(user.expires_at).getTime() < Date.now()) {
     return null
+  }
+
+  if (!user.xtream_username) {
+    user.xtream_username = getShortLoginFromEmail(user.email)
   }
 
   return user
@@ -4724,7 +4902,7 @@ app.get('/player_api.php', async (req, res) => {
     if (!action) {
       return res.json({
         user_info: {
-          username: user.email,
+          username: user.xtream_username || getShortLoginFromEmail(user.email) || user.email,
           password: user.password,
           message: 'Nexora TV',
           auth: 1,
@@ -4818,8 +4996,8 @@ app.get('/player_api.php', async (req, res) => {
         category_id: getXtreamCategoryId(detectLiveGroupByName(item.name, item.category)),
         custom_sid: '',
         tv_archive: 0,
-        direct_source: item.url || `${baseUrl}/live/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.ts`,
-        stream_url: item.url || `${baseUrl}/live/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.ts`,
+        direct_source: item.url || `${baseUrl}/live/${encodeURIComponent(user.xtream_username || getShortLoginFromEmail(user.email) || user.email)}/${encodeURIComponent(user.password)}/${item.id}.ts`,
+        stream_url: item.url || `${baseUrl}/live/${encodeURIComponent(user.xtream_username || getShortLoginFromEmail(user.email) || user.email)}/${encodeURIComponent(user.password)}/${item.id}.ts`,
         container_extension: 'ts',
         tv_archive_duration: 0
       })))
@@ -4851,7 +5029,7 @@ app.get('/player_api.php', async (req, res) => {
         category_id: '1',
         container_extension: getMovieExtension(item.video),
         custom_sid: '',
-        direct_source: `${baseUrl}/movie/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`
+        direct_source: `${baseUrl}/movie/${encodeURIComponent(user.xtream_username || getShortLoginFromEmail(user.email) || user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`
       })))
     }
 
@@ -4937,7 +5115,7 @@ app.get('/player_api.php', async (req, res) => {
           category_id: '1',
           container_extension: getMovieExtension(item.video),
           custom_sid: '',
-          direct_source: `${baseUrl}/movie/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`
+          direct_source: `${baseUrl}/movie/${encodeURIComponent(user.xtream_username || getShortLoginFromEmail(user.email) || user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`
         }
       })
     }
@@ -5004,7 +5182,7 @@ app.get('/player_api.php', async (req, res) => {
           custom_sid: '',
           added: String(now),
           season,
-          direct_source: `${baseUrl}/series/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`
+          direct_source: `${baseUrl}/series/${encodeURIComponent(user.xtream_username || getShortLoginFromEmail(user.email) || user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`
         })
       }
 
@@ -5120,7 +5298,7 @@ app.get('/get.php', async (req, res) => {
 
     for (const item of channels.rows) {
       lines.push(`#EXTINF:-1 tvg-id="" tvg-name="${item.name}" tvg-logo="${item.logo || ''}" group-title="${detectLiveGroupByName(item.name, item.category)}",${item.name}`)
-      lines.push(item.url || `${baseUrl}/live/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.${output === 'ts' ? 'ts' : 'm3u8'}`)
+      lines.push(item.url || `${baseUrl}/live/${encodeURIComponent(user.xtream_username || getShortLoginFromEmail(user.email) || user.email)}/${encodeURIComponent(user.password)}/${item.id}.${output === 'ts' ? 'ts' : 'm3u8'}`)
     }
 
     const movies = await pool.query(`
@@ -5136,7 +5314,7 @@ app.get('/get.php', async (req, res) => {
 
     for (const item of movies.rows) {
       lines.push(`#EXTINF:-1 tvg-id="" tvg-name="${item.title}" tvg-logo="${item.image || ''}" group-title="Filmes",${item.title}`)
-      lines.push(`${baseUrl}/movie/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`)
+      lines.push(`${baseUrl}/movie/${encodeURIComponent(user.xtream_username || getShortLoginFromEmail(user.email) || user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`)
     }
 
     const series = await pool.query(`
@@ -5155,7 +5333,7 @@ app.get('/get.php', async (req, res) => {
 
     for (const item of series.rows) {
       lines.push(`#EXTINF:-1 tvg-id="" tvg-name="${item.title}" tvg-logo="${item.image || ''}" group-title="Séries",${item.title}`)
-      lines.push(`${baseUrl}/series/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`)
+      lines.push(`${baseUrl}/series/${encodeURIComponent(user.xtream_username || getShortLoginFromEmail(user.email) || user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`)
     }
 
     res.setHeader('Content-Type', type === 'm3u_plus' ? 'audio/x-mpegurl' : 'text/plain')
