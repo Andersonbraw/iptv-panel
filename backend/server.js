@@ -119,6 +119,10 @@ async function initDb() {
   `)
 
   await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS sale_price NUMERIC DEFAULT 20
+  `)
+
+  await pool.query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_test_ip TEXT DEFAULT ''
   `)
 
@@ -315,14 +319,10 @@ async function initDb() {
   await pool.query(`
     UPDATE reseller_sales
     SET
-      sale_value = 8,
-      commission = 0,
-      profit = 8,
-      sale_type = 'cliente_30_dias',
-      description = 'Cliente 30 dias criado'
+      sale_type = 'cliente_30_dias'
     WHERE
-      sale_type NOT IN ('teste_5h')
-      AND LOWER(COALESCE(description, '')) NOT LIKE '%teste%'
+      sale_type IS NULL
+      OR sale_type = ''
   `)
 
   console.log('BANCO OK')
@@ -1138,14 +1138,14 @@ async function addCreditHistory(resellerId, adminId, type, amount, description) 
 }
 
 async function addResellerSale(resellerId, client, saleType = 'cliente_30_dias') {
-  const saleValue = saleType === 'teste_5h' ? 0 : 8
-
+  let saleValue = 0
+  let adminCost = 8
   let commissionRate = 0
 
   try {
     const resellerResult = await pool.query(
       `
-      SELECT commission_rate
+      SELECT commission_rate, sale_price
       FROM users
       WHERE id = $1
       LIMIT 1
@@ -1154,15 +1154,22 @@ async function addResellerSale(resellerId, client, saleType = 'cliente_30_dias')
     )
 
     commissionRate = Number(resellerResult.rows[0]?.commission_rate || 0)
+
+    saleValue = saleType === 'teste_5h'
+      ? 0
+      : Number(resellerResult.rows[0]?.sale_price || 20)
   } catch {
     commissionRate = 0
+    saleValue = saleType === 'teste_5h' ? 0 : 20
   }
 
   const commission = saleType === 'teste_5h'
     ? 0
     : Number(((saleValue * commissionRate) / 100).toFixed(2))
 
-  const profit = Number((saleValue - commission).toFixed(2))
+  const profit = saleType === 'teste_5h'
+    ? 0
+    : Number((saleValue - commission - adminCost).toFixed(2))
 
   try {
     await pool.query(
@@ -1192,7 +1199,7 @@ async function addResellerSale(resellerId, client, saleType = 'cliente_30_dias')
         profit,
         saleType === 'teste_5h'
           ? 'Teste 5 horas gerado'
-          : 'Cliente 30 dias criado'
+          : `Cliente 30 dias criado - venda ${saleValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
       ]
     )
 
@@ -1375,7 +1382,7 @@ app.get('/reseller/dashboard', auth, adminOrReseller, async (req, res) => {
     const [meResult, clientsResult, salesResult, financePack] = await Promise.all([
       pool.query(
         `
-        SELECT id, name, email, role, status, credits, commission_rate, balance
+        SELECT id, name, email, role, status, credits, commission_rate, balance, sale_price
         FROM users
         WHERE id = $1
         LIMIT 1
@@ -2168,6 +2175,46 @@ app.post('/admin/resellers/:id/add-credits', auth, adminOnly, async (req, res) =
   }
 })
 
+
+
+app.patch('/admin/resellers/:id/sale-price', auth, adminOnly, async (req, res) => {
+  try {
+    const salePrice = Number(req.body.sale_price || 0)
+
+    if (salePrice < 0) {
+      return res.status(400).json({
+        error: 'preço inválido'
+      })
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET sale_price = $1
+      WHERE id = $2
+        AND role = 'reseller'
+      RETURNING id, name, email, credits, commission_rate, balance, sale_price, status
+      `,
+      [
+        salePrice,
+        req.params.id
+      ]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'revendedor não encontrado'
+      })
+    }
+
+    res.json(result.rows[0])
+  } catch (err) {
+    console.log('ERRO SALE PRICE:', err)
+    res.status(500).json({
+      error: 'erro ao configurar preço'
+    })
+  }
+})
 
 app.patch('/admin/resellers/:id/commission', auth, adminOnly, async (req, res) => {
   try {

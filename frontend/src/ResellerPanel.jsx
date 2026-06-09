@@ -376,6 +376,7 @@ M3U: ${API}/get.php?username=${encodeURIComponent(shortLogin)}&password=${encode
           <h2 style={styles.balance}>{money(reseller?.balance)}</h2>
           <p style={styles.email}>Saldo comissão</p>
           <p style={styles.email}>Comissão: {reseller?.commission_rate || 0}%</p>
+          <p style={styles.email}>Preço venda: {money(reseller?.sale_price || 20)}</p>
         </div>
 
         <button style={styles.redButton} onClick={logout}>Sair</button>
@@ -385,7 +386,7 @@ M3U: ${API}/get.php?username=${encodeURIComponent(shortLogin)}&password=${encode
         <div style={styles.topBar}>
           <div>
             <h1 style={styles.title}>Painel Revendedor</h1>
-            <p style={styles.subtitle}>Funciona no celular. Clientes, saldo, gráficos, notificações e testes.</p>
+            <p style={styles.subtitle}>Preço de venda configurado pelo admin. Clientes, saldo, gráficos, notificações e testes.</p>
           </div>
         </div>
 

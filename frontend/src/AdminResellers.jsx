@@ -26,6 +26,7 @@ function AdminResellers() {
   const [credits, setCredits] = useState(10)
   const [addAmount, setAddAmount] = useState(10)
   const [paymentAmount, setPaymentAmount] = useState(0)
+  const [salePrice, setSalePrice] = useState(20)
   const [createdLogin, setCreatedLogin] = useState(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('todos')
@@ -88,6 +89,24 @@ function AdminResellers() {
       if (selectedReseller?.id === reseller.id) await loadClients(reseller)
     } catch (err) {
       alert(err.response?.data?.error || 'Erro ao adicionar créditos')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function setSalePriceForReseller(reseller) {
+    try {
+      setLoading(true)
+      await axios.patch(
+        `${API}/admin/resellers/${reseller.id}/sale-price`,
+        {
+          sale_price: Number(salePrice || 0)
+        },
+        { headers }
+      )
+      await loadResellers()
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erro ao configurar preço de venda')
     } finally {
       setLoading(false)
     }
@@ -261,6 +280,7 @@ function AdminResellers() {
                 <p style={styles.email}>{reseller.email}</p>
                 <small>Créditos: {reseller.credits || 0}</small><br />
                 <small>Clientes: {reseller.clients_count || 0}</small><br />
+                <small>Preço venda cliente: {money(reseller.sale_price || 20)}</small><br />
                 <small>Vendas: {money(reseller.vendas)}</small><br />
                 <small>Comissão: {reseller.commission_rate || 0}%</small><br />
                 <small>Saldo: {money(reseller.balance)}</small><br />
@@ -271,6 +291,16 @@ function AdminResellers() {
               <div style={styles.actions}>
                 <input type='number' min='1' value={addAmount} onChange={e => setAddAmount(e.target.value)} style={styles.creditInput} />
                 <button style={styles.yellowButton} onClick={() => addCredits(reseller)}>+ Créditos</button>
+
+                <input
+                  type='number'
+                  min='0'
+                  placeholder='Preço venda'
+                  value={salePrice}
+                  onChange={e => setSalePrice(e.target.value)}
+                  style={styles.paymentInput}
+                />
+                <button style={styles.blueButton} onClick={() => setSalePriceForReseller(reseller)}>Preço venda</button>
 
                 <button style={styles.grayButton} onClick={() => setCommission(reseller, 20)}>20%</button>
                 <button style={styles.grayButton} onClick={() => setCommission(reseller, 30)}>30%</button>
