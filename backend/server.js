@@ -4959,65 +4959,10 @@ async function streamStoredContent(req, res, type) {
 
     const streamUrl = result.rows[0].video
 
-    if (type !== 'live') {
-      return res.redirect(streamUrl)
-    }
-
-    const requestHeaders = {
-      Accept: '*/*',
-      Connection: 'keep-alive',
-      'Cache-Control': 'no-cache',
-      Pragma: 'no-cache',
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/148.0.0.0 Safari/537.36'
-    }
-
-    if (req.headers.range) {
-      requestHeaders.Range = req.headers.range
-    }
-
-    const response = await fetch(streamUrl, {
-      method: 'GET',
-      redirect: 'follow',
-      headers: requestHeaders
-    })
-
-    if (!response.ok && response.status !== 206) {
-      return res.status(response.status).send(`stream erro ${response.status}`)
-    }
-
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Accept-Ranges', 'bytes')
-    res.setHeader('Cache-Control', 'no-cache')
-
-    const contentType =
-      response.headers.get('content-type') ||
-      (String(streamUrl).includes('.m3u8')
-        ? 'application/vnd.apple.mpegurl'
-        : 'video/mp2t')
-
-    res.setHeader('Content-Type', contentType)
-
-    const contentLength = response.headers.get('content-length')
-    const contentRange = response.headers.get('content-range')
-
-    if (contentLength) res.setHeader('Content-Length', contentLength)
-    if (contentRange) res.setHeader('Content-Range', contentRange)
-
-    res.status(response.status === 206 || req.headers.range ? 206 : 200)
-
-    if (!response.body) {
-      return res.status(500).send('stream sem corpo')
-    }
-
-    const nodeStream = Readable.fromWeb(response.body)
-
-    nodeStream.on('error', err => {
-      console.log('ERRO LIVE PIPE:', err.message)
-      res.destroy(err)
-    })
-
-    return nodeStream.pipe(res)
+    // Compatibilidade Xtream externa:
+    // XCIPTV, Smarters e apps parecidos funcionam melhor recebendo redirect direto.
+    // O APK Nexora e o painel web continuam usando suas rotas próprias, sem alteração.
+    return res.redirect(streamUrl)
   } catch (err) {
     console.log('ERRO STREAM CONTENT:', err)
     res.status(500).send('erro stream')
