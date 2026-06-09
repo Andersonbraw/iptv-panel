@@ -12,11 +12,7 @@ function money(value) {
 
 function getExpireColor(date) {
   if (!date) return '#94a3b8'
-
-  const diffDays = Math.ceil(
-    (new Date(date).getTime() - Date.now()) / 1000 / 60 / 60 / 24
-  )
-
+  const diffDays = Math.ceil((new Date(date).getTime() - Date.now()) / 1000 / 60 / 60 / 24)
   if (diffDays <= 0) return '#ef4444'
   if (diffDays <= 3) return '#facc15'
   return '#22c55e'
@@ -29,24 +25,28 @@ function AdminResellers() {
   const [name, setName] = useState('')
   const [credits, setCredits] = useState(10)
   const [addAmount, setAddAmount] = useState(10)
+  const [paymentAmount, setPaymentAmount] = useState(0)
   const [createdLogin, setCreatedLogin] = useState(null)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('todos')
   const [loading, setLoading] = useState(false)
 
-  const headers = useMemo(() => {
-    return {
-      Authorization: `Bearer ${localStorage.getItem('token')}`
-    }
-  }, [])
+  const headers = useMemo(() => ({ Authorization: `Bearer ${localStorage.getItem('token')}` }), [])
+
+  const filteredResellers = useMemo(() => {
+    const q = search.toLowerCase().trim()
+
+    return resellers.filter(item => {
+      const matchesSearch = `${item.name || ''} ${item.email || ''}`.toLowerCase().includes(q)
+      const matchesStatus = statusFilter === 'todos' || item.status === statusFilter
+      return matchesSearch && matchesStatus
+    })
+  }, [resellers, search, statusFilter])
 
   async function loadResellers() {
     try {
       setLoading(true)
-
-      const res = await axios.get(
-        `${API}/admin/resellers`,
-        { headers }
-      )
-
+      const res = await axios.get(`${API}/admin/resellers`, { headers })
       setResellers(res.data || [])
     } catch (err) {
       alert(err.response?.data?.error || 'Erro ao carregar revendedores')
@@ -58,12 +58,7 @@ function AdminResellers() {
   async function loadClients(reseller) {
     try {
       setSelectedReseller(reseller)
-
-      const res = await axios.get(
-        `${API}/admin/resellers/${reseller.id}/clients`,
-        { headers }
-      )
-
+      const res = await axios.get(`${API}/admin/resellers/${reseller.id}/clients`, { headers })
       setClients(res.data || [])
     } catch (err) {
       alert(err.response?.data?.error || 'Erro ao carregar clientes')
@@ -73,16 +68,7 @@ function AdminResellers() {
   async function createReseller() {
     try {
       setLoading(true)
-
-      const res = await axios.post(
-        `${API}/admin/resellers/create`,
-        {
-          name,
-          credits: Number(credits || 0)
-        },
-        { headers }
-      )
-
+      const res = await axios.post(`${API}/admin/resellers/create`, { name, credits: Number(credits || 0) }, { headers })
       setCreatedLogin(res.data.login)
       setName('')
       setCredits(10)
@@ -97,22 +83,43 @@ function AdminResellers() {
   async function addCredits(reseller) {
     try {
       setLoading(true)
-
-      await axios.post(
-        `${API}/admin/resellers/${reseller.id}/add-credits`,
-        {
-          amount: Number(addAmount || 0)
-        },
-        { headers }
-      )
-
+      await axios.post(`${API}/admin/resellers/${reseller.id}/add-credits`, { amount: Number(addAmount || 0) }, { headers })
       await loadResellers()
-
-      if (selectedReseller?.id === reseller.id) {
-        await loadClients(reseller)
-      }
+      if (selectedReseller?.id === reseller.id) await loadClients(reseller)
     } catch (err) {
       alert(err.response?.data?.error || 'Erro ao adicionar créditos')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function setCommission(reseller, rate) {
+    try {
+      setLoading(true)
+      await axios.patch(`${API}/admin/resellers/${reseller.id}/commission`, { commission_rate: rate }, { headers })
+      await loadResellers()
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erro ao configurar comissão')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function registerPayment(reseller) {
+    const amount = Number(paymentAmount || reseller.balance || 0)
+    if (amount <= 0) return alert('Valor inválido')
+
+    try {
+      setLoading(true)
+      await axios.post(`${API}/admin/resellers/${reseller.id}/payment`, {
+        amount,
+        method: 'PIX',
+        description: 'Pagamento de saldo do revendedor'
+      }, { headers })
+      setPaymentAmount(0)
+      await loadResellers()
+    } catch (err) {
+      alert(err.response?.data?.error || 'Erro ao registrar pagamento')
     } finally {
       setLoading(false)
     }
@@ -121,13 +128,7 @@ function AdminResellers() {
   async function updateReseller(reseller, data) {
     try {
       setLoading(true)
-
-      await axios.patch(
-        `${API}/admin/resellers/${reseller.id}`,
-        data,
-        { headers }
-      )
-
+      await axios.patch(`${API}/admin/resellers/${reseller.id}`, data, { headers })
       await loadResellers()
     } catch (err) {
       alert(err.response?.data?.error || 'Erro ao atualizar revendedor')
@@ -139,13 +140,7 @@ function AdminResellers() {
   async function updateClient(client, data) {
     try {
       setLoading(true)
-
-      await axios.patch(
-        `${API}/admin/resellers/clients/${client.id}`,
-        data,
-        { headers }
-      )
-
+      await axios.patch(`${API}/admin/resellers/clients/${client.id}`, data, { headers })
       if (selectedReseller) await loadClients(selectedReseller)
     } catch (err) {
       alert(err.response?.data?.error || 'Erro ao atualizar cliente')
@@ -156,18 +151,11 @@ function AdminResellers() {
 
   async function renameClient(client) {
     const newName = prompt('Novo nome do cliente:', client.name)
-
     if (!newName) return
 
     try {
       setLoading(true)
-
-      await axios.patch(
-        `${API}/admin/resellers/clients/${client.id}/name`,
-        { name: newName },
-        { headers }
-      )
-
+      await axios.patch(`${API}/admin/resellers/clients/${client.id}/name`, { name: newName }, { headers })
       if (selectedReseller) await loadClients(selectedReseller)
     } catch (err) {
       alert(err.response?.data?.error || 'Erro ao editar nome')
@@ -181,13 +169,7 @@ function AdminResellers() {
 
     try {
       setLoading(true)
-
-      const res = await axios.post(
-        `${API}/admin/resellers/clients/${client.id}/reset-password`,
-        {},
-        { headers }
-      )
-
+      const res = await axios.post(`${API}/admin/resellers/clients/${client.id}/reset-password`, {}, { headers })
       setCreatedLogin(res.data.login)
     } catch (err) {
       alert(err.response?.data?.error || 'Erro ao resetar senha')
@@ -199,13 +181,7 @@ function AdminResellers() {
   async function renewClient(client) {
     try {
       setLoading(true)
-
-      await axios.patch(
-        `${API}/admin/resellers/clients/${client.id}/renew-30-days`,
-        {},
-        { headers }
-      )
-
+      await axios.patch(`${API}/admin/resellers/clients/${client.id}/renew-30-days`, {}, { headers })
       if (selectedReseller) await loadClients(selectedReseller)
     } catch (err) {
       alert(err.response?.data?.error || 'Erro ao renovar cliente')
@@ -219,12 +195,7 @@ function AdminResellers() {
 
     try {
       setLoading(true)
-
-      await axios.delete(
-        `${API}/admin/resellers/${reseller.id}`,
-        { headers }
-      )
-
+      await axios.delete(`${API}/admin/resellers/${reseller.id}`, { headers })
       setSelectedReseller(null)
       setClients([])
       await loadResellers()
@@ -237,56 +208,36 @@ function AdminResellers() {
 
   function copyLogin() {
     if (!createdLogin) return
-
-    navigator.clipboard.writeText(`
-Nome: ${createdLogin.name}
-
-Email: ${createdLogin.email}
-
-Senha: ${createdLogin.password}
-    `)
-
+    navigator.clipboard.writeText(`Nome: ${createdLogin.name}\n\nEmail: ${createdLogin.email}\n\nSenha: ${createdLogin.password}`)
     alert('Login copiado')
   }
 
-  useEffect(() => {
-    loadResellers()
-  }, [])
+  useEffect(() => { loadResellers() }, [])
 
   return (
     <div style={styles.container}>
       <div style={styles.header}>
         <div>
-          <h1 style={styles.title}>Revendedores</h1>
-          <p style={styles.subtitle}>
-            Cada crédito vendido vale R$ 8,00. Gerencie revendedores e clientes.
-          </p>
+          <h1 style={styles.title}>Multi-Revendedores</h1>
+          <p style={styles.subtitle}>Centenas de revendedores, filtros, pesquisa, saldo, comissão e clientes.</p>
         </div>
       </div>
 
       <div style={styles.createBox}>
-        <input
-          placeholder='Nome do revendedor'
-          value={name}
-          onChange={e => setName(e.target.value)}
-          style={styles.input}
-        />
+        <input placeholder='Nome do revendedor' value={name} onChange={e => setName(e.target.value)} style={styles.input} />
+        <input type='number' min='0' value={credits} onChange={e => setCredits(e.target.value)} style={styles.smallInput} />
+        <button style={styles.blueButton} onClick={createReseller} disabled={loading}>Criar Revendedor</button>
+        <button style={styles.grayButton} onClick={loadResellers} disabled={loading}>Atualizar</button>
+      </div>
 
-        <input
-          type='number'
-          min='0'
-          value={credits}
-          onChange={e => setCredits(e.target.value)}
-          style={styles.smallInput}
-        />
+      <div style={styles.filterBox}>
+        <input placeholder='Pesquisar revendedor...' value={search} onChange={e => setSearch(e.target.value)} style={styles.input} />
 
-        <button style={styles.blueButton} onClick={createReseller} disabled={loading}>
-          Criar Revendedor
-        </button>
-
-        <button style={styles.grayButton} onClick={loadResellers} disabled={loading}>
-          Atualizar
-        </button>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={styles.select}>
+          <option value='todos'>Todos</option>
+          <option value='active'>Ativos</option>
+          <option value='blocked'>Bloqueados</option>
+        </select>
       </div>
 
       {createdLogin && (
@@ -303,7 +254,7 @@ Senha: ${createdLogin.password}
 
       <div style={styles.mainGrid}>
         <div>
-          {resellers.map(reseller => (
+          {filteredResellers.map(reseller => (
             <div key={reseller.id} style={styles.card}>
               <div>
                 <strong style={styles.name}>{reseller.name}</strong>
@@ -311,52 +262,35 @@ Senha: ${createdLogin.password}
                 <small>Créditos: {reseller.credits || 0}</small><br />
                 <small>Clientes: {reseller.clients_count || 0}</small><br />
                 <small>Vendas: {money(reseller.vendas)}</small><br />
-                <small>Comissão: {money(reseller.comissoes)}</small><br />
-                <small>Lucro: {money(reseller.lucro)}</small><br />
+                <small>Comissão: {reseller.commission_rate || 0}%</small><br />
+                <small>Saldo: {money(reseller.balance)}</small><br />
+                <small>Lucro Admin: {money(reseller.lucro)}</small><br />
                 <small>Status: {reseller.status}</small>
               </div>
 
               <div style={styles.actions}>
-                <input
-                  type='number'
-                  min='1'
-                  value={addAmount}
-                  onChange={e => setAddAmount(e.target.value)}
-                  style={styles.creditInput}
-                />
+                <input type='number' min='1' value={addAmount} onChange={e => setAddAmount(e.target.value)} style={styles.creditInput} />
+                <button style={styles.yellowButton} onClick={() => addCredits(reseller)}>+ Créditos</button>
 
-                <button style={styles.yellowButton} onClick={() => addCredits(reseller)}>
-                  + Créditos
-                </button>
+                <button style={styles.grayButton} onClick={() => setCommission(reseller, 20)}>20%</button>
+                <button style={styles.grayButton} onClick={() => setCommission(reseller, 30)}>30%</button>
+                <button style={styles.grayButton} onClick={() => setCommission(reseller, 40)}>40%</button>
 
-                <button style={styles.greenButton} onClick={() => updateReseller(reseller, { status: 'active' })}>
-                  Ativar
-                </button>
+                <input type='number' placeholder='Pagamento' value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} style={styles.paymentInput} />
+                <button style={styles.greenButton} onClick={() => registerPayment(reseller)}>Pagar saldo</button>
 
-                <button style={styles.redButton} onClick={() => updateReseller(reseller, { status: 'blocked' })}>
-                  Bloquear
-                </button>
-
-                <button style={styles.blueButton} onClick={() => loadClients(reseller)}>
-                  Ver clientes
-                </button>
-
-                <button style={styles.deleteButton} onClick={() => deleteReseller(reseller)}>
-                  Excluir
-                </button>
+                <button style={styles.greenButton} onClick={() => updateReseller(reseller, { status: 'active' })}>Ativar</button>
+                <button style={styles.redButton} onClick={() => updateReseller(reseller, { status: 'blocked' })}>Bloquear</button>
+                <button style={styles.blueButton} onClick={() => loadClients(reseller)}>Ver clientes</button>
+                <button style={styles.deleteButton} onClick={() => deleteReseller(reseller)}>Excluir</button>
               </div>
             </div>
           ))}
         </div>
 
         <div style={styles.clientsBox}>
-          <h2 style={styles.clientsTitle}>
-            {selectedReseller ? `Clientes de ${selectedReseller.name}` : 'Clientes do revendedor'}
-          </h2>
-
-          {!selectedReseller && (
-            <p style={styles.subtitle}>Clique em "Ver clientes" em um revendedor.</p>
-          )}
+          <h2 style={styles.clientsTitle}>{selectedReseller ? `Clientes de ${selectedReseller.name}` : 'Clientes do revendedor'}</h2>
+          {!selectedReseller && <p style={styles.subtitle}>Clique em "Ver clientes" em um revendedor.</p>}
 
           {clients.map(client => (
             <div key={client.id} style={styles.clientCard}>
@@ -372,33 +306,13 @@ Senha: ${createdLogin.password}
               </div>
 
               <div style={styles.clientActions}>
-                <button style={styles.grayButton} onClick={() => renameClient(client)}>
-                  Editar nome
-                </button>
-
-                <button style={styles.purpleButton} onClick={() => resetPassword(client)}>
-                  Resetar senha
-                </button>
-
-                <button style={styles.greenButton} onClick={() => updateClient(client, { status: 'active' })}>
-                  Ativar
-                </button>
-
-                <button style={styles.redButton} onClick={() => updateClient(client, { status: 'blocked' })}>
-                  Bloquear
-                </button>
-
-                <button style={styles.grayButton} onClick={() => updateClient(client, { max_connections: 1 })}>
-                  1 conexão
-                </button>
-
-                <button style={styles.grayButton} onClick={() => updateClient(client, { max_connections: 2 })}>
-                  2 conexões
-                </button>
-
-                <button style={styles.yellowButton} onClick={() => renewClient(client)}>
-                  Renovar 30 dias
-                </button>
+                <button style={styles.grayButton} onClick={() => renameClient(client)}>Editar nome</button>
+                <button style={styles.purpleButton} onClick={() => resetPassword(client)}>Resetar senha</button>
+                <button style={styles.greenButton} onClick={() => updateClient(client, { status: 'active' })}>Ativar</button>
+                <button style={styles.redButton} onClick={() => updateClient(client, { status: 'blocked' })}>Bloquear</button>
+                <button style={styles.grayButton} onClick={() => updateClient(client, { max_connections: 1 })}>1 conexão</button>
+                <button style={styles.grayButton} onClick={() => updateClient(client, { max_connections: 2 })}>2 conexões</button>
+                <button style={styles.yellowButton} onClick={() => renewClient(client)}>Renovar 30 dias</button>
               </div>
             </div>
           ))}
@@ -409,228 +323,38 @@ Senha: ${createdLogin.password}
 }
 
 const styles = {
-  container: {
-    background: 'linear-gradient(180deg,#07142b,#020617)',
-    padding: 22,
-    borderRadius: 24
-  },
-
-  header: {
-    marginBottom: 18
-  },
-
-  title: {
-    margin: 0,
-    fontSize: 38
-  },
-
-  subtitle: {
-    color: '#94a3b8'
-  },
-
-  createBox: {
-    display: 'flex',
-    gap: 10,
-    flexWrap: 'wrap',
-    marginBottom: 20
-  },
-
-  input: {
-    minWidth: 260,
-    flex: 1,
-    padding: 13,
-    borderRadius: 12,
-    border: '1px solid #334155',
-    background: '#020617',
-    color: '#fff'
-  },
-
-  smallInput: {
-    width: 120,
-    padding: 13,
-    borderRadius: 12,
-    border: '1px solid #334155',
-    background: '#020617',
-    color: '#fff'
-  },
-
-  creditInput: {
-    width: 80,
-    padding: 10,
-    borderRadius: 10,
-    border: '1px solid #334155',
-    background: '#020617',
-    color: '#fff'
-  },
-
-  loginBox: {
-    background: '#020617',
-    padding: 18,
-    borderRadius: 18,
-    marginBottom: 20,
-    border: '1px solid #38bdf8'
-  },
-
-  copyInput: {
-    width: '100%',
-    padding: 12,
-    marginBottom: 10,
-    borderRadius: 12,
-    border: '1px solid #334155',
-    background: '#07142b',
-    color: '#fff',
-    boxSizing: 'border-box'
-  },
-
-  loading: {
-    background: '#020617',
-    border: '1px solid #12345f',
-    padding: 14,
-    borderRadius: 14,
-    marginBottom: 20,
-    color: '#38bdf8',
-    fontWeight: 'bold'
-  },
-
-  mainGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1.35fr',
-    gap: 18
-  },
-
-  card: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    gap: 20,
-    background: 'linear-gradient(180deg,#020617,#111827)',
-    padding: 18,
-    borderRadius: 18,
-    marginBottom: 14,
-    border: '1px solid rgba(255,255,255,0.05)',
-    flexWrap: 'wrap'
-  },
-
-  name: {
-    fontSize: 18
-  },
-
-  email: {
-    color: '#94a3b8',
-    margin: '6px 0'
-  },
-
-  actions: {
-    display: 'flex',
-    gap: 8,
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
-    alignItems: 'center'
-  },
-
-  clientsBox: {
-    background: '#020617',
-    borderRadius: 18,
-    padding: 16,
-    border: '1px solid rgba(56,189,248,0.15)',
-    minHeight: 260
-  },
-
-  clientsTitle: {
-    marginTop: 0
-  },
-
-  clientCard: {
-    background: '#07142b',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-    border: '1px solid rgba(56,189,248,0.12)'
-  },
-
-  clientInfo: {
-    marginBottom: 12
-  },
-
-  clientName: {
-    fontSize: 18
-  },
-
-  clientActions: {
-    display: 'flex',
-    gap: 8,
-    flexWrap: 'wrap',
-    marginTop: 12
-  },
-
-  blueButton: {
-    padding: '10px 14px',
-    border: 'none',
-    borderRadius: 12,
-    background: 'linear-gradient(90deg,#38bdf8,#0ea5e9)',
-    color: '#000',
-    fontWeight: 'bold',
-    cursor: 'pointer'
-  },
-
-  greenButton: {
-    padding: '10px 14px',
-    border: 'none',
-    borderRadius: 12,
-    background: 'linear-gradient(90deg,#22c55e,#16a34a)',
-    color: '#000',
-    fontWeight: 'bold',
-    cursor: 'pointer'
-  },
-
-  yellowButton: {
-    padding: '10px 14px',
-    border: 'none',
-    borderRadius: 12,
-    background: 'linear-gradient(90deg,#facc15,#eab308)',
-    color: '#000',
-    fontWeight: 'bold',
-    cursor: 'pointer'
-  },
-
-  redButton: {
-    padding: '10px 14px',
-    border: 'none',
-    borderRadius: 12,
-    background: 'linear-gradient(90deg,#ef4444,#dc2626)',
-    color: '#fff',
-    fontWeight: 'bold',
-    cursor: 'pointer'
-  },
-
-  grayButton: {
-    padding: '10px 14px',
-    border: 'none',
-    borderRadius: 12,
-    background: '#334155',
-    color: '#fff',
-    fontWeight: 'bold',
-    cursor: 'pointer'
-  },
-
-  purpleButton: {
-    padding: '10px 14px',
-    border: 'none',
-    borderRadius: 12,
-    background: 'linear-gradient(90deg,#a855f7,#7e22ce)',
-    color: '#fff',
-    fontWeight: 'bold',
-    cursor: 'pointer'
-  },
-
-  deleteButton: {
-    padding: '10px 14px',
-    border: 'none',
-    borderRadius: 12,
-    background: 'linear-gradient(90deg,#991b1b,#7f1d1d)',
-    color: '#fff',
-    fontWeight: 'bold',
-    cursor: 'pointer'
-  }
+  container: { background: 'linear-gradient(180deg,#07142b,#020617)', padding: 22, borderRadius: 24 },
+  header: { marginBottom: 18 },
+  title: { margin: 0, fontSize: 38 },
+  subtitle: { color: '#94a3b8' },
+  createBox: { display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 },
+  filterBox: { display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20 },
+  input: { minWidth: 260, flex: 1, padding: 13, borderRadius: 12, border: '1px solid #334155', background: '#020617', color: '#fff' },
+  select: { padding: 13, borderRadius: 12, border: '1px solid #334155', background: '#020617', color: '#fff' },
+  smallInput: { width: 120, padding: 13, borderRadius: 12, border: '1px solid #334155', background: '#020617', color: '#fff' },
+  creditInput: { width: 80, padding: 10, borderRadius: 10, border: '1px solid #334155', background: '#020617', color: '#fff' },
+  paymentInput: { width: 110, padding: 10, borderRadius: 10, border: '1px solid #334155', background: '#020617', color: '#fff' },
+  loginBox: { background: '#020617', padding: 18, borderRadius: 18, marginBottom: 20, border: '1px solid #38bdf8' },
+  copyInput: { width: '100%', padding: 12, marginBottom: 10, borderRadius: 12, border: '1px solid #334155', background: '#07142b', color: '#fff', boxSizing: 'border-box' },
+  loading: { background: '#020617', border: '1px solid #12345f', padding: 14, borderRadius: 14, marginBottom: 20, color: '#38bdf8', fontWeight: 'bold' },
+  mainGrid: { display: 'grid', gridTemplateColumns: '1fr 1.35fr', gap: 18 },
+  card: { display: 'flex', justifyContent: 'space-between', gap: 20, background: 'linear-gradient(180deg,#020617,#111827)', padding: 18, borderRadius: 18, marginBottom: 14, border: '1px solid rgba(255,255,255,0.05)', flexWrap: 'wrap' },
+  name: { fontSize: 18 },
+  email: { color: '#94a3b8', margin: '6px 0' },
+  actions: { display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' },
+  clientsBox: { background: '#020617', borderRadius: 18, padding: 16, border: '1px solid rgba(56,189,248,0.15)', minHeight: 260 },
+  clientsTitle: { marginTop: 0 },
+  clientCard: { background: '#07142b', borderRadius: 14, padding: 14, marginBottom: 12, border: '1px solid rgba(56,189,248,0.12)' },
+  clientInfo: { marginBottom: 12 },
+  clientName: { fontSize: 18 },
+  clientActions: { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 },
+  blueButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#38bdf8,#0ea5e9)', color: '#000', fontWeight: 'bold', cursor: 'pointer' },
+  greenButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#22c55e,#16a34a)', color: '#000', fontWeight: 'bold', cursor: 'pointer' },
+  yellowButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#facc15,#eab308)', color: '#000', fontWeight: 'bold', cursor: 'pointer' },
+  redButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#ef4444,#dc2626)', color: '#fff', fontWeight: 'bold', cursor: 'pointer' },
+  grayButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: '#334155', color: '#fff', fontWeight: 'bold', cursor: 'pointer' },
+  purpleButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#a855f7,#7e22ce)', color: '#fff', fontWeight: 'bold', cursor: 'pointer' },
+  deleteButton: { padding: '10px 14px', border: 'none', borderRadius: 12, background: 'linear-gradient(90deg,#991b1b,#7f1d1d)', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }
 }
 
 export default AdminResellers

@@ -1388,6 +1388,7 @@ app.get('/reseller/dashboard', auth, adminOrReseller, async (req, res) => {
           id,
           name,
           email,
+          password,
           xtream_username,
           role,
           status,
@@ -1643,6 +1644,95 @@ app.post('/reseller/clients/create-test', auth, adminOrReseller, async (req, res
   }
 })
 
+
+
+app.patch('/reseller/clients/:id/full-edit', auth, adminOrReseller, async (req, res) => {
+  try {
+    const {
+      name,
+      password,
+      xtream_username,
+      max_connections,
+      expires_at
+    } = req.body
+
+    let cleanXtream = null
+
+    if (xtream_username !== undefined && xtream_username !== null) {
+      cleanXtream = String(xtream_username || '')
+        .replace(/\D/g, '')
+        .trim()
+
+      if (!cleanXtream || cleanXtream.length < 3) {
+        return res.status(400).json({
+          error: 'login Xtream inválido'
+        })
+      }
+
+      const duplicate = await pool.query(
+        `
+        SELECT id
+        FROM users
+        WHERE LOWER(COALESCE(xtream_username, '')) = LOWER($1)
+          AND id <> $2
+        LIMIT 1
+        `,
+        [
+          cleanXtream,
+          req.params.id
+        ]
+      )
+
+      if (duplicate.rows.length > 0) {
+        return res.status(400).json({
+          error: 'esse login já está em uso'
+        })
+      }
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET
+        name = COALESCE($1, name),
+        password = COALESCE($2, password),
+        xtream_username = COALESCE($3, xtream_username),
+        max_connections = COALESCE($4, max_connections),
+        expires_at = COALESCE($5, expires_at)
+      WHERE id = $6
+        AND reseller_parent_id = $7
+        AND role = 'client'
+      RETURNING id, name, email, password, xtream_username, status, plan, max_connections, expires_at
+      `,
+      [
+        name !== undefined && String(name).trim()
+          ? String(name).trim()
+          : null,
+        password !== undefined && String(password).trim()
+          ? String(password).trim()
+          : null,
+        cleanXtream,
+        max_connections || null,
+        expires_at || null,
+        req.params.id,
+        req.user.id
+      ]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: 'cliente não encontrado'
+      })
+    }
+
+    res.json(result.rows[0])
+  } catch (err) {
+    console.log('ERRO FULL EDIT CLIENT RESELLER:', err)
+    res.status(500).json({
+      error: 'erro ao editar cliente'
+    })
+  }
+})
 
 app.patch('/reseller/clients/:id/name', auth, adminOrReseller, async (req, res) => {
   try {
@@ -2990,6 +3080,7 @@ app.get('/me', auth, async (req, res) => {
           id,
           name,
           email,
+          password,
           xtream_username,
           role,
           status,
