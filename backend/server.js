@@ -4504,28 +4504,40 @@ function getPublicBaseUrl(req) {
 }
 
 function getXtreamCategoryId(category = 'TV') {
-  const text = String(category || 'TV')
-  let hash = 0
+  const name = String(category || 'Outros').trim()
 
-  for (let i = 0; i < text.length; i++) {
-    hash = ((hash << 5) - hash) + text.charCodeAt(i)
-    hash |= 0
+  const fixed = {
+    'Globo': '10',
+    'SBT': '11',
+    'Record': '12',
+    'Band': '13',
+    'RedeTV': '14',
+    'Esportes': '20',
+    'Infantil': '21',
+    'Notícias': '22',
+    'Documentários': '23',
+    'Filmes e Séries': '24',
+    'Música': '25',
+    '24 Horas': '26',
+    'Religiosos': '27',
+    'Variedades': '28',
+    'Outros': '99'
   }
 
-  return String(Math.abs(hash) || 1)
+  return fixed[name] || '99'
 }
 
 function getXtreamCategoryName(category = '') {
   const name = String(category || '').trim()
 
-  if (!name) return 'TV'
+  if (!name) return 'Outros'
 
   if (/^\d+$/.test(name)) {
-    return `Categoria ${name}`
+    return 'Outros'
   }
 
   if (/^categoria\s+\d+$/i.test(name)) {
-    return name.replace(/^categoria/i, 'Categoria')
+    return 'Outros'
   }
 
   return name
@@ -4536,18 +4548,107 @@ function detectLiveGroupByName(name = '', category = '') {
 
   if (text.includes('globo')) return 'Globo'
   if (text.includes('sbt')) return 'SBT'
-  if (text.includes('record')) return 'Record'
+  if (text.includes('record') || text.includes('rec ') || text.includes(' r7')) return 'Record'
   if (text.includes('band')) return 'Band'
   if (text.includes('redetv') || text.includes('rede tv')) return 'RedeTV'
-  if (text.includes('premiere') || text.includes('sportv') || text.includes('espn') || text.includes('fox sports') || text.includes('ufc')) return 'Esportes'
-  if (text.includes('cartoon') || text.includes('disney') || text.includes('nick') || text.includes('kids') || text.includes('infantil')) return 'Infantil'
-  if (text.includes('cnn') || text.includes('news') || text.includes('jovem pan') || text.includes('bandnews') || text.includes('noticia')) return 'Notícias'
-  if (text.includes('discovery') || text.includes('history') || text.includes('nat geo') || text.includes('animal planet') || text.includes('documentario')) return 'Documentários'
-  if (text.includes('hbo') || text.includes('telecine') || text.includes('megapix') || text.includes('cinema') || text.includes('filme')) return 'Filmes e Séries'
-  if (text.includes('music') || text.includes('mtv') || text.includes('multishow')) return 'Música'
-  if (text.includes('24h') || text.includes('24 h') || text.includes('[24h]')) return '24 Horas'
 
-  return getXtreamCategoryName(category || 'Outros')
+  if (
+    text.includes('premiere') ||
+    text.includes('sportv') ||
+    text.includes('espn') ||
+    text.includes('fox sports') ||
+    text.includes('ufc') ||
+    text.includes('combate') ||
+    text.includes('nba') ||
+    text.includes('nfl') ||
+    text.includes('futebol') ||
+    text.includes('sport ')
+  ) return 'Esportes'
+
+  if (
+    text.includes('cartoon') ||
+    text.includes('disney') ||
+    text.includes('nick') ||
+    text.includes('kids') ||
+    text.includes('infantil') ||
+    text.includes('tooncast') ||
+    text.includes('discovery kids') ||
+    text.includes('gloob')
+  ) return 'Infantil'
+
+  if (
+    text.includes('cnn') ||
+    text.includes('news') ||
+    text.includes('jovem pan') ||
+    text.includes('bandnews') ||
+    text.includes('noticia') ||
+    text.includes('notícias') ||
+    text.includes('bbc') ||
+    text.includes('record news')
+  ) return 'Notícias'
+
+  if (
+    text.includes('discovery') ||
+    text.includes('history') ||
+    text.includes('nat geo') ||
+    text.includes('animal planet') ||
+    text.includes('documentario') ||
+    text.includes('documentário')
+  ) return 'Documentários'
+
+  if (
+    text.includes('hbo') ||
+    text.includes('telecine') ||
+    text.includes('megapix') ||
+    text.includes('cinema') ||
+    text.includes('filme') ||
+    text.includes('fx ') ||
+    text.includes('warner') ||
+    text.includes('sony') ||
+    text.includes('axn') ||
+    text.includes('space') ||
+    text.includes('tnt')
+  ) return 'Filmes e Séries'
+
+  if (
+    text.includes('music') ||
+    text.includes('mtv') ||
+    text.includes('multishow') ||
+    text.includes('bis') ||
+    text.includes('música') ||
+    text.includes('musica')
+  ) return 'Música'
+
+  if (
+    text.includes('religioso') ||
+    text.includes('religiao') ||
+    text.includes('religião') ||
+    text.includes('gospel') ||
+    text.includes('igreja') ||
+    text.includes('canção nova') ||
+    text.includes('cancao nova') ||
+    text.includes('aparecida') ||
+    text.includes('evangelizar')
+  ) return 'Religiosos'
+
+  if (
+    text.includes('24h') ||
+    text.includes('24 h') ||
+    text.includes('[24h]') ||
+    text.includes('24 horas')
+  ) return '24 Horas'
+
+  if (
+    text.includes('viva') ||
+    text.includes('gnt') ||
+    text.includes('multishow') ||
+    text.includes('tlc') ||
+    text.includes('a&e') ||
+    text.includes('e!') ||
+    text.includes('lifetime')
+  ) return 'Variedades'
+
+  return 'Outros'
 }
 
 
@@ -4943,13 +5044,9 @@ async function streamStoredContent(req, res, type) {
       return res.status(401).send('login inválido')
     }
 
-    let query = ''
-
-    if (type === 'live') {
-      query = 'SELECT url AS video FROM channels WHERE id = $1 LIMIT 1'
-    } else {
-      query = 'SELECT video FROM movies WHERE id = $1 LIMIT 1'
-    }
+    const query = type === 'live'
+      ? 'SELECT url AS video FROM channels WHERE id = $1 LIMIT 1'
+      : 'SELECT video FROM movies WHERE id = $1 LIMIT 1'
 
     const result = await pool.query(query, [id])
 
@@ -4959,10 +5056,10 @@ async function streamStoredContent(req, res, type) {
 
     const streamUrl = result.rows[0].video
 
-    // Compatibilidade Xtream externa:
-    // XCIPTV, Smarters e apps parecidos funcionam melhor recebendo redirect direto.
-    // O APK Nexora e o painel web continuam usando suas rotas próprias, sem alteração.
-    return res.redirect(streamUrl)
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Cache-Control', 'no-cache')
+
+    return res.redirect(302, streamUrl)
   } catch (err) {
     console.log('ERRO STREAM CONTENT:', err)
     res.status(500).send('erro stream')
@@ -5011,7 +5108,7 @@ app.get('/get.php', async (req, res) => {
 
     for (const item of channels.rows) {
       lines.push(`#EXTINF:-1 tvg-id="" tvg-name="${item.name}" tvg-logo="${item.logo || ''}" group-title="${detectLiveGroupByName(item.name, item.category)}",${item.name}`)
-      lines.push(`${baseUrl}/live/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.${output === 'ts' ? 'ts' : 'm3u8'}`)
+      lines.push(item.url || `${baseUrl}/live/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.${output === 'ts' ? 'ts' : 'm3u8'}`)
     }
 
     const movies = await pool.query(`
