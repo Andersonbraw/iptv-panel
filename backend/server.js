@@ -538,24 +538,24 @@ function cleanCategoryName(value = '') {
     return 'Outros'
   }
 
-  if (normalized.includes('lancamento') || normalized.includes('lancamentos')) return 'Lançamentos'
-  if (normalized.includes('acao') || normalized.includes('action')) return 'Ação'
-  if (normalized.includes('aventura') || normalized.includes('adventure')) return 'Aventura'
-  if (normalized.includes('comedia') || normalized.includes('comedy')) return 'Comédia'
-  if (normalized.includes('drama')) return 'Drama'
-  if (normalized.includes('terror') || normalized.includes('horror')) return 'Terror'
-  if (normalized.includes('suspense') || normalized.includes('thriller')) return 'Suspense'
-  if (normalized.includes('romance')) return 'Romance'
-  if (normalized.includes('ficcao') || normalized.includes('sci fi') || normalized.includes('scifi')) return 'Ficção Científica'
-  if (normalized.includes('fantasia') || normalized.includes('fantasy')) return 'Fantasia'
-  if (normalized.includes('animacao') || normalized.includes('animation')) return 'Animação'
-  if (normalized.includes('infantil') || normalized.includes('kids')) return 'Infantil'
-  if (normalized.includes('documentario') || normalized.includes('documentary')) return 'Documentário'
-  if (normalized.includes('nacional') || normalized.includes('brasil')) return 'Nacionais'
-  if (normalized.includes('dublado')) return 'Dublados'
-  if (normalized.includes('legendado') || normalized.includes('legendas')) return 'Legendados'
-  if (normalized.includes('religioso') || normalized.includes('gospel')) return 'Religiosos'
-  if (normalized.includes('show') || normalized.includes('musica')) return 'Shows e Música'
+  if (normalized.includes('lancamento') || normalized.includes('lancamentos')) return 'Filmes - Lançamentos'
+  if (normalized.includes('acao') || normalized.includes('action')) return 'Filmes - Ação'
+  if (normalized.includes('aventura') || normalized.includes('adventure')) return 'Filmes - Aventura'
+  if (normalized.includes('comedia') || normalized.includes('comedy')) return 'Filmes - Comédia'
+  if (normalized.includes('drama')) return 'Filmes - Drama'
+  if (normalized.includes('terror') || normalized.includes('horror')) return 'Filmes - Terror'
+  if (normalized.includes('suspense') || normalized.includes('thriller')) return 'Filmes - Suspense'
+  if (normalized.includes('romance')) return 'Filmes - Romance'
+  if (normalized.includes('ficcao') || normalized.includes('sci fi') || normalized.includes('scifi')) return 'Filmes - Ficção Científica'
+  if (normalized.includes('fantasia') || normalized.includes('fantasy')) return 'Filmes - Fantasia'
+  if (normalized.includes('animacao') || normalized.includes('animation')) return 'Filmes - Animação'
+  if (normalized.includes('infantil') || normalized.includes('kids')) return 'Filmes - Infantil'
+  if (normalized.includes('documentario') || normalized.includes('documentary')) return 'Filmes - Documentário'
+  if (normalized.includes('nacional') || normalized.includes('brasil')) return 'Filmes - Nacionais'
+  if (normalized.includes('dublado')) return 'Filmes - Dublados'
+  if (normalized.includes('legendado') || normalized.includes('legendas')) return 'Filmes - Legendados'
+  if (normalized.includes('religioso') || normalized.includes('gospel')) return 'Filmes - Religiosos'
+  if (normalized.includes('show') || normalized.includes('musica')) return 'Filmes - Shows e Música'
 
   return name
 }
@@ -563,24 +563,24 @@ function cleanCategoryName(value = '') {
 function detectVodCategory(item = {}) {
   const source = normalizeText(`${item.category || ''} ${item.title || item.name || ''}`)
 
-  if (source.includes('lancamento') || source.includes('lancamentos')) return 'Lançamentos'
-  if (source.includes('acao') || source.includes('action')) return 'Ação'
-  if (source.includes('aventura') || source.includes('adventure')) return 'Aventura'
-  if (source.includes('comedia') || source.includes('comedy')) return 'Comédia'
-  if (source.includes('drama')) return 'Drama'
-  if (source.includes('terror') || source.includes('horror')) return 'Terror'
-  if (source.includes('suspense') || source.includes('thriller')) return 'Suspense'
-  if (source.includes('romance')) return 'Romance'
-  if (source.includes('ficcao') || source.includes('sci fi') || source.includes('scifi')) return 'Ficção Científica'
-  if (source.includes('fantasia') || source.includes('fantasy')) return 'Fantasia'
-  if (source.includes('animacao') || source.includes('animation')) return 'Animação'
-  if (source.includes('infantil') || source.includes('kids')) return 'Infantil'
-  if (source.includes('documentario') || source.includes('documentary')) return 'Documentário'
-  if (source.includes('nacional') || source.includes('brasil')) return 'Nacionais'
-  if (source.includes('dublado')) return 'Dublados'
-  if (source.includes('legendado') || source.includes('legendas')) return 'Legendados'
-  if (source.includes('religioso') || source.includes('gospel')) return 'Religiosos'
-  if (source.includes('show') || source.includes('musica')) return 'Shows e Música'
+  if (source.includes('lancamento') || source.includes('lancamentos')) return 'Filmes - Lançamentos'
+  if (source.includes('acao') || source.includes('action')) return 'Filmes - Ação'
+  if (source.includes('aventura') || source.includes('adventure')) return 'Filmes - Aventura'
+  if (source.includes('comedia') || source.includes('comedy')) return 'Filmes - Comédia'
+  if (source.includes('drama')) return 'Filmes - Drama'
+  if (source.includes('terror') || source.includes('horror')) return 'Filmes - Terror'
+  if (source.includes('suspense') || source.includes('thriller')) return 'Filmes - Suspense'
+  if (source.includes('romance')) return 'Filmes - Romance'
+  if (source.includes('ficcao') || source.includes('sci fi') || source.includes('scifi')) return 'Filmes - Ficção Científica'
+  if (source.includes('fantasia') || source.includes('fantasy')) return 'Filmes - Fantasia'
+  if (source.includes('animacao') || source.includes('animation')) return 'Filmes - Animação'
+  if (source.includes('infantil') || source.includes('kids')) return 'Filmes - Infantil'
+  if (source.includes('documentario') || source.includes('documentary')) return 'Filmes - Documentário'
+  if (source.includes('nacional') || source.includes('brasil')) return 'Filmes - Nacionais'
+  if (source.includes('dublado')) return 'Filmes - Dublados'
+  if (source.includes('legendado') || source.includes('legendas')) return 'Filmes - Legendados'
+  if (source.includes('religioso') || source.includes('gospel')) return 'Filmes - Religiosos'
+  if (source.includes('show') || source.includes('musica')) return 'Filmes - Shows e Música'
 
   return cleanCategoryName(item.category || 'Filmes')
 }
@@ -5318,6 +5318,31 @@ app.get('/proxy-stream', async (req, res) => {
 })
 
 
+
+async function updateXtreamWatching(user, type, title) {
+  try {
+    if (!user?.id) return
+
+    await pool.query(
+      `
+      UPDATE users
+      SET
+        watching = $1,
+        watching_type = $2,
+        watching_updated_at = NOW()
+      WHERE id = $3
+      `,
+      [
+        String(title || '').substring(0, 180),
+        String(type || '').substring(0, 40),
+        user.id
+      ]
+    )
+  } catch (err) {
+    console.log('ERRO UPDATE XTREAM WATCHING:', err.message)
+  }
+}
+
 async function getXtreamUser(username = '', password = '') {
   const login = String(username || '').trim()
 
@@ -5439,7 +5464,7 @@ function detectLiveGroupByName(name = '', category = '') {
     text.includes('tooncast') ||
     text.includes('discovery kids') ||
     text.includes('gloob')
-  ) return 'Infantil'
+  ) return 'Filmes - Infantil'
 
   if (
     text.includes('cnn') ||
@@ -5494,7 +5519,7 @@ function detectLiveGroupByName(name = '', category = '') {
     text.includes('cancao nova') ||
     text.includes('aparecida') ||
     text.includes('evangelizar')
-  ) return 'Religiosos'
+  ) return 'Filmes - Religiosos'
 
   if (
     text.includes('24h') ||
