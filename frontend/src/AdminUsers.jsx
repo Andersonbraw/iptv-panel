@@ -15,6 +15,8 @@ function AdminUsers({
   const [loading, setLoading] = useState(false)
   const [editingLoginUser, setEditingLoginUser] = useState(null)
   const [newXtreamLogin, setNewXtreamLogin] = useState('')
+  const [newClientName, setNewClientName] = useState('')
+  const [newClientPassword, setNewClientPassword] = useState('')
 
   const headers = useMemo(() => {
     return {
@@ -242,27 +244,36 @@ function AdminUsers({
       return
     }
 
+    if (!String(newClientName || '').trim()) {
+      alert('Digite o nome do cliente')
+      return
+    }
+
     try {
       setLoading(true)
 
       await axios.patch(
-        `${API}/admin/resellers/clients/${editingLoginUser.id}/xtream-login`,
+        `${API}/admin/users/${editingLoginUser.id}`,
         {
+          name: String(newClientName || '').trim(),
+          password: String(newClientPassword || '').trim() || undefined,
           xtream_username: login
         },
         { headers }
       )
 
-      alert('Login Xtream atualizado')
+      alert('Cliente atualizado')
 
       setEditingLoginUser(null)
       setNewXtreamLogin('')
+      setNewClientName('')
+      setNewClientPassword('')
 
       reloadUsers()
     } catch (err) {
       alert(
         err.response?.data?.error ||
-          'Erro ao editar login Xtream'
+          'Erro ao editar cliente'
       )
     } finally {
       setLoading(false)
@@ -272,6 +283,8 @@ function AdminUsers({
   function openEditLogin(user) {
     setEditingLoginUser(user)
     setNewXtreamLogin(getShortLogin(user))
+    setNewClientName(user.name || '')
+    setNewClientPassword('')
   }
 
   function copyUserXtreamLogin(user) {
@@ -418,11 +431,11 @@ M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username |
           </button>
 
           <button
-            style={styles.testButton}
+            style={styles.orangeButton}
             onClick={createTest5h}
             disabled={loading}
           >
-            Gerar teste 5 horas
+            Teste 5h
           </button>
         </div>
       </div>
@@ -485,8 +498,10 @@ M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username |
           </p>
 
           <input
-            readOnly
-            value={`Cliente: ${editingLoginUser.name || ''}`}
+            type='text'
+            value={newClientName}
+            onChange={e => setNewClientName(e.target.value)}
+            placeholder='Nome do cliente'
             style={styles.copyInput}
           />
 
@@ -504,7 +519,15 @@ M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username |
                 e.target.value.replace(/\D/g, '')
               )
             }
-            placeholder='Ex: 823966'
+            placeholder='Login Xtream curto. Ex: 823966'
+            style={styles.copyInput}
+          />
+
+          <input
+            type='text'
+            value={newClientPassword}
+            onChange={e => setNewClientPassword(e.target.value)}
+            placeholder='Nova senha (deixe vazio para manter a atual)'
             style={styles.copyInput}
           />
 
@@ -528,6 +551,8 @@ M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username |
               onClick={() => {
                 setEditingLoginUser(null)
                 setNewXtreamLogin('')
+                setNewClientName('')
+                setNewClientPassword('')
               }}
               disabled={loading}
             >
@@ -749,7 +774,7 @@ M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username |
                       style={styles.yellowButton}
                       onClick={() => openEditLogin(user)}
                     >
-                      Editar login
+                      Editar cliente
                     </button>
 
                     <button
@@ -1048,6 +1073,19 @@ const styles = {
     color: '#000',
     fontWeight: 'bold',
     cursor: 'pointer'
+  },
+
+  orangeButton: {
+    padding: '10px 16px',
+    border: 'none',
+    borderRadius: 12,
+    background:
+      'linear-gradient(90deg,#fb923c,#ea580c)',
+    color: '#fff',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    boxShadow: '0 8px 22px rgba(249,115,22,0.25)',
+    whiteSpace: 'nowrap'
   },
 
   purpleButton: {

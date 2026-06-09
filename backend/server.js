@@ -2557,6 +2557,10 @@ app.get('/admin/users', auth, adminOnly, async (req, res) => {
 app.patch('/admin/users/:id', auth, adminOnly, async (req, res) => {
   try {
     const {
+      name,
+      email,
+      password,
+      xtream_username,
       role,
       status,
       plan,
@@ -2567,21 +2571,65 @@ app.patch('/admin/users/:id', auth, adminOnly, async (req, res) => {
 
     const { id } = req.params
 
+    let cleanXtream = null
+
+    if (xtream_username !== undefined && xtream_username !== null) {
+      cleanXtream = String(xtream_username || '')
+        .replace(/\D/g, '')
+        .trim()
+
+      if (!cleanXtream || cleanXtream.length < 3) {
+        return res.status(400).json({
+          error: 'login Xtream inválido'
+        })
+      }
+
+      const duplicate = await pool.query(
+        `
+        SELECT id
+        FROM users
+        WHERE LOWER(COALESCE(xtream_username, '')) = LOWER($1)
+          AND id <> $2
+        LIMIT 1
+        `,
+        [
+          cleanXtream,
+          id
+        ]
+      )
+
+      if (duplicate.rows.length > 0) {
+        return res.status(400).json({
+          error: 'esse login já está em uso'
+        })
+      }
+    }
+
     const result =
       await pool.query(
         `
         UPDATE users
         SET
-          role = COALESCE($1, role),
-          status = COALESCE($2, status),
-          plan = COALESCE($3, plan),
-          max_connections = COALESCE($4, max_connections),
-          expires_at = COALESCE($5, expires_at),
-          credits = COALESCE($6, credits)
-        WHERE id = $7
-        RETURNING id, name, email, role, status, plan, max_connections, expires_at, credits
+          name = COALESCE($1, name),
+          email = COALESCE($2, email),
+          password = COALESCE($3, password),
+          xtream_username = COALESCE($4, xtream_username),
+          role = COALESCE($5, role),
+          status = COALESCE($6, status),
+          plan = COALESCE($7, plan),
+          max_connections = COALESCE($8, max_connections),
+          expires_at = COALESCE($9, expires_at),
+          credits = COALESCE($10, credits)
+        WHERE id = $11
+        RETURNING id, name, email, password, xtream_username, role, status, plan, max_connections, expires_at, credits
         `,
         [
+          name !== undefined ? String(name).trim() : null,
+          email !== undefined ? String(email).trim() : null,
+          password !== undefined && String(password).trim()
+            ? String(password).trim()
+            : null,
+          cleanXtream,
           role,
           status,
           plan,
