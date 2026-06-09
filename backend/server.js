@@ -4503,6 +4503,35 @@ function getPublicBaseUrl(req) {
   return `${proto}://${host}`
 }
 
+function getXtreamCategoryId(category = 'TV') {
+  const text = String(category || 'TV')
+  let hash = 0
+
+  for (let i = 0; i < text.length; i++) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(i)
+    hash |= 0
+  }
+
+  return String(Math.abs(hash) || 1)
+}
+
+function getXtreamCategoryName(category = '') {
+  const name = String(category || '').trim()
+
+  if (!name) return 'TV'
+
+  if (/^\d+$/.test(name)) {
+    return `Categoria ${name}`
+  }
+
+  if (/^categoria\s+\d+$/i.test(name)) {
+    return name.replace(/^categoria/i, 'Categoria')
+  }
+
+  return name
+}
+
+
 function getMovieExtension(video = '') {
   const lower = String(video || '').toLowerCase()
 
@@ -4602,15 +4631,16 @@ app.get('/player_api.php', async (req, res) => {
 
     if (action === 'get_live_categories') {
       const result = await pool.query(`
-        SELECT category, MIN(id)::INTEGER AS category_id
+        SELECT category, COUNT(*)::INTEGER AS total
         FROM channels
+        WHERE is_online = true
         GROUP BY category
         ORDER BY category ASC
       `)
 
       return res.json(result.rows.map(row => ({
-        category_id: String(row.category_id || 0),
-        category_name: row.category || 'TV',
+        category_id: getXtreamCategoryId(row.category || 'TV'),
+        category_name: getXtreamCategoryName(row.category || 'TV'),
         parent_id: 0
       })))
     }
@@ -4652,7 +4682,7 @@ app.get('/player_api.php', async (req, res) => {
         stream_icon: item.logo || '',
         epg_channel_id: '',
         added: String(now),
-        category_id: String(Math.abs((item.category || 'TV').split('').reduce((a, c) => a + c.charCodeAt(0), 0))),
+        category_id: getXtreamCategoryId(item.category || 'TV'),
         custom_sid: '',
         tv_archive: 0,
         direct_source: `${baseUrl}/live/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.m3u8}`,
@@ -4942,7 +4972,7 @@ app.get('/get.php', async (req, res) => {
     `)
 
     for (const item of channels.rows) {
-      lines.push(`#EXTINF:-1 tvg-id="" tvg-name="${item.name}" tvg-logo="${item.logo || ''}" group-title="${item.category || 'TV'}",${item.name}`)
+      lines.push(`#EXTINF:-1 tvg-id="" tvg-name="${item.name}" tvg-logo="${item.logo || ''}" group-title="${getXtreamCategoryName(item.category || 'TV')}",${item.name}`)
       lines.push(`${baseUrl}/live/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.${output === 'ts' ? 'ts' : 'm3u8'}`)
     }
 
