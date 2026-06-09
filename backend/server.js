@@ -4531,6 +4531,25 @@ function getXtreamCategoryName(category = '') {
   return name
 }
 
+function detectLiveGroupByName(name = '', category = '') {
+  const text = normalizeText(`${name} ${category}`)
+
+  if (text.includes('globo')) return 'Globo'
+  if (text.includes('sbt')) return 'SBT'
+  if (text.includes('record')) return 'Record'
+  if (text.includes('band')) return 'Band'
+  if (text.includes('redetv') || text.includes('rede tv')) return 'RedeTV'
+  if (text.includes('premiere') || text.includes('sportv') || text.includes('espn') || text.includes('fox sports') || text.includes('ufc')) return 'Esportes'
+  if (text.includes('cartoon') || text.includes('disney') || text.includes('nick') || text.includes('kids') || text.includes('infantil')) return 'Infantil'
+  if (text.includes('cnn') || text.includes('news') || text.includes('jovem pan') || text.includes('bandnews') || text.includes('noticia')) return 'Notícias'
+  if (text.includes('discovery') || text.includes('history') || text.includes('nat geo') || text.includes('animal planet') || text.includes('documentario')) return 'Documentários'
+  if (text.includes('hbo') || text.includes('telecine') || text.includes('megapix') || text.includes('cinema') || text.includes('filme')) return 'Filmes e Séries'
+  if (text.includes('music') || text.includes('mtv') || text.includes('multishow')) return 'Música'
+  if (text.includes('24h') || text.includes('24 h') || text.includes('[24h]')) return '24 Horas'
+
+  return getXtreamCategoryName(category || 'Outros')
+}
+
 
 function getMovieExtension(video = '') {
   const lower = String(video || '').toLowerCase()
@@ -4631,18 +4650,31 @@ app.get('/player_api.php', async (req, res) => {
 
     if (action === 'get_live_categories') {
       const result = await pool.query(`
-        SELECT category, COUNT(*)::INTEGER AS total
+        SELECT name, category
         FROM channels
         WHERE is_online = true
-        GROUP BY category
-        ORDER BY category ASC
+        ORDER BY name ASC
+        LIMIT 5000
       `)
 
-      return res.json(result.rows.map(row => ({
-        category_id: getXtreamCategoryId(row.category || 'TV'),
-        category_name: getXtreamCategoryName(row.category || 'TV'),
-        parent_id: 0
-      })))
+      const groups = new Map()
+
+      for (const row of result.rows) {
+        const groupName = detectLiveGroupByName(row.name, row.category)
+        const groupId = getXtreamCategoryId(groupName)
+
+        if (!groups.has(groupId)) {
+          groups.set(groupId, {
+            category_id: groupId,
+            category_name: groupName,
+            parent_id: 0
+          })
+        }
+      }
+
+      return res.json(Array.from(groups.values()).sort((a, b) =>
+        String(a.category_name).localeCompare(String(b.category_name))
+      ))
     }
 
     if (action === 'get_vod_categories') {
@@ -4682,7 +4714,7 @@ app.get('/player_api.php', async (req, res) => {
         stream_icon: item.logo || '',
         epg_channel_id: '',
         added: String(now),
-        category_id: getXtreamCategoryId(item.category || 'TV'),
+        category_id: getXtreamCategoryId(detectLiveGroupByName(item.name, item.category)),
         custom_sid: '',
         tv_archive: 0,
         direct_source: `${baseUrl}/live/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.m3u8}`,
@@ -4912,6 +4944,7 @@ async function streamStoredContent(req, res, type) {
     }
 
     let query = ''
+
     if (type === 'live') {
       query = 'SELECT url AS video FROM channels WHERE id = $1 LIMIT 1'
     } else {
@@ -4924,7 +4957,67 @@ async function streamStoredContent(req, res, type) {
       return res.status(404).send('conteúdo não encontrado')
     }
 
-    return res.redirect(result.rows[0].video)
+    const streamUrl = result.rows[0].video
+
+    if (type !== 'live') {
+      return res.redirect(streamUrl)
+    }
+
+    const requestHeaders = {
+      Accept: '*/*',
+      Connection: 'keep-alive',
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/148.0.0.0 Safari/537.36'
+    }
+
+    if (req.headers.range) {
+      requestHeaders.Range = req.headers.range
+    }
+
+    const response = await fetch(streamUrl, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: requestHeaders
+    })
+
+    if (!response.ok && response.status !== 206) {
+      return res.status(response.status).send(`stream erro ${response.status}`)
+    }
+
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Accept-Ranges', 'bytes')
+    res.setHeader('Cache-Control', 'no-cache')
+
+    const contentType =
+      response.headers.get('content-type') ||
+      (String(streamUrl).includes('.m3u8')
+        ? 'application/vnd.apple.mpegurl'
+        : 'video/mp2t')
+
+    res.setHeader('Content-Type', contentType)
+
+    const contentLength = response.headers.get('content-length')
+    const contentRange = response.headers.get('content-range')
+
+    if (contentLength) res.setHeader('Content-Length', contentLength)
+    if (contentRange) res.setHeader('Content-Range', contentRange)
+
+    res.status(response.status === 206 || req.headers.range ? 206 : 200)
+
+    if (!response.body) {
+      return res.status(500).send('stream sem corpo')
+    }
+
+    const nodeStream = Readable.fromWeb(response.body)
+
+    nodeStream.on('error', err => {
+      console.log('ERRO LIVE PIPE:', err.message)
+      res.destroy(err)
+    })
+
+    return nodeStream.pipe(res)
   } catch (err) {
     console.log('ERRO STREAM CONTENT:', err)
     res.status(500).send('erro stream')
@@ -4972,7 +5065,7 @@ app.get('/get.php', async (req, res) => {
     `)
 
     for (const item of channels.rows) {
-      lines.push(`#EXTINF:-1 tvg-id="" tvg-name="${item.name}" tvg-logo="${item.logo || ''}" group-title="${getXtreamCategoryName(item.category || 'TV')}",${item.name}`)
+      lines.push(`#EXTINF:-1 tvg-id="" tvg-name="${item.name}" tvg-logo="${item.logo || ''}" group-title="${detectLiveGroupByName(item.name, item.category)}",${item.name}`)
       lines.push(`${baseUrl}/live/${encodeURIComponent(user.email)}/${encodeURIComponent(user.password)}/${item.id}.${output === 'ts' ? 'ts' : 'm3u8'}`)
     }
 
