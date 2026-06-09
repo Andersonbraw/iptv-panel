@@ -179,6 +179,37 @@ function AdminUsers({
     }
   }
 
+  async function createTest5h() {
+    try {
+      setLoading(true)
+
+      const res = await axios.post(
+        `${API}/admin/users/create-test-5h`,
+        {
+          name: clientName || 'Teste 5 Horas'
+        },
+        { headers }
+      )
+
+      setCreatedLogin({
+        ...res.data.login,
+        name: clientName || 'Teste 5 Horas'
+      })
+
+      setClientName('')
+      reloadUsers()
+
+      alert('Teste 5 horas criado')
+    } catch (err) {
+      alert(
+        err.response?.data?.error ||
+          'Erro ao criar teste 5 horas'
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
   function getShortLogin(user) {
     return (
       user.xtream_username ||
@@ -384,6 +415,14 @@ M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username |
             disabled={loading}
           >
             Login aleatório
+          </button>
+
+          <button
+            style={styles.orangeButton}
+            onClick={createTest5h}
+            disabled={loading}
+          >
+            Teste 5h
           </button>
         </div>
       </div>

@@ -2790,6 +2790,60 @@ app.post('/admin/users/create-random', auth, adminOnly, async (req, res) => {
   }
 })
 
+
+app.post('/admin/users/create-test-5h', auth, adminOnly, async (req, res) => {
+  try {
+    const login = generateRandomLogin(req.body.name || 'Teste 5 Horas')
+
+    const xtreamUsername = await generateUniqueXtreamUsername(
+      getShortLoginFromEmail(login.email)
+    )
+
+    const result = await pool.query(
+      `
+      INSERT INTO users
+      (
+        name,
+        email,
+        password,
+        role,
+        status,
+        plan,
+        max_connections,
+        expires_at,
+        credits,
+        xtream_username
+      )
+      VALUES ($1,$2,$3,'client','active','teste',1,NOW() + INTERVAL '5 hours',0,$4)
+      RETURNING id, name, email, password, xtream_username, role, status, plan, max_connections, expires_at, credits
+      `,
+      [
+        login.name,
+        login.email,
+        login.password,
+        xtreamUsername
+      ]
+    )
+
+    res.json({
+      success: true,
+      user: result.rows[0],
+      login: {
+        name: result.rows[0].name,
+        email: result.rows[0].email,
+        xtream_username: result.rows[0].xtream_username || getShortLoginFromEmail(result.rows[0].email),
+        password: result.rows[0].password
+      }
+    })
+  } catch (err) {
+    console.log('ERRO CREATE TEST 5H ADMIN:', err)
+
+    res.status(500).json({
+      error: err.message || 'erro ao criar teste 5 horas'
+    })
+  }
+})
+
 app.delete('/admin/users/:id', auth, adminOnly, async (req, res) => {
   try {
     const { id } = req.params
