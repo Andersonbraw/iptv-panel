@@ -13,6 +13,8 @@ function AdminUsers({
   const [search, setSearch] = useState('')
   const [clientName, setClientName] = useState('')
   const [loading, setLoading] = useState(false)
+  const [editingLoginUser, setEditingLoginUser] = useState(null)
+  const [newXtreamLogin, setNewXtreamLogin] = useState('')
 
   const headers = useMemo(() => {
     return {
@@ -64,6 +66,7 @@ function AdminUsers({
       const text = normalize(`
         ${user.name || ''}
         ${user.email || ''}
+        ${user.xtream_username || ''}
       `)
 
       return text.includes(normalize(search))
@@ -176,6 +179,75 @@ function AdminUsers({
     }
   }
 
+  function getShortLogin(user) {
+    return (
+      user.xtream_username ||
+      String(user.email || '').replace(/\D/g, '') ||
+      user.email ||
+      ''
+    )
+  }
+
+  async function saveXtreamLogin() {
+    if (!editingLoginUser) return
+
+    const login = String(newXtreamLogin || '')
+      .replace(/\D/g, '')
+      .trim()
+
+    if (!login || login.length < 3) {
+      alert('Digite um login numérico com pelo menos 3 números')
+      return
+    }
+
+    try {
+      setLoading(true)
+
+      await axios.patch(
+        `${API}/admin/resellers/clients/${editingLoginUser.id}/xtream-login`,
+        {
+          xtream_username: login
+        },
+        { headers }
+      )
+
+      alert('Login Xtream atualizado')
+
+      setEditingLoginUser(null)
+      setNewXtreamLogin('')
+
+      reloadUsers()
+    } catch (err) {
+      alert(
+        err.response?.data?.error ||
+          'Erro ao editar login Xtream'
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function openEditLogin(user) {
+    setEditingLoginUser(user)
+    setNewXtreamLogin(getShortLogin(user))
+  }
+
+  function copyUserXtreamLogin(user) {
+    const shortLogin = getShortLogin(user)
+
+    navigator.clipboard.writeText(`
+Lista: Nexora TV
+
+Servidor: ${API}
+
+Usuário: ${shortLogin}
+
+Senha: ${user.password || 'senha do cliente'}
+    `)
+
+    alert('Dados Xtream copiados')
+  }
+
   async function deleteUser(id) {
     const confirmDelete = confirm('Excluir este cliente?')
 
@@ -208,7 +280,11 @@ Nome: ${createdLogin.name}
 
 Email: ${createdLogin.email}
 
+Login Xtream: ${createdLogin.xtream_username || String(createdLogin.email || '').replace(/\D/g, '')}
+
 Senha: ${createdLogin.password}
+
+Servidor: ${API}
     `)
 
     alert('Login copiado')
@@ -305,6 +381,18 @@ Senha: ${createdLogin.password}
 
           <input
             readOnly
+            value={`Login Xtream: ${createdLogin.xtream_username || String(createdLogin.email || '').replace(/\\D/g, '')}`}
+            style={styles.copyInput}
+          />
+
+          <input
+            readOnly
+            value={`Servidor: ${API}`}
+            style={styles.copyInput}
+          />
+
+          <input
+            readOnly
             value={`Senha: ${createdLogin.password}`}
             style={styles.copyInput}
           />
@@ -315,6 +403,67 @@ Senha: ${createdLogin.password}
           >
             Copiar login
           </button>
+        </div>
+      )}
+
+      {editingLoginUser && (
+        <div style={styles.loginBox}>
+          <h3>Editar Login Xtream</h3>
+
+          <p style={styles.subtitle}>
+            Este é o usuário curto para apps como XCIPTV, Smarters, TiviMate e Televizo.
+          </p>
+
+          <input
+            readOnly
+            value={`Cliente: ${editingLoginUser.name || ''}`}
+            style={styles.copyInput}
+          />
+
+          <input
+            readOnly
+            value={`Email interno: ${editingLoginUser.email || ''}`}
+            style={styles.copyInput}
+          />
+
+          <input
+            type='text'
+            value={newXtreamLogin}
+            onChange={e =>
+              setNewXtreamLogin(
+                e.target.value.replace(/\D/g, '')
+              )
+            }
+            placeholder='Ex: 823966'
+            style={styles.copyInput}
+          />
+
+          <input
+            readOnly
+            value={`Servidor: ${API}`}
+            style={styles.copyInput}
+          />
+
+          <div style={styles.modalActions}>
+            <button
+              style={styles.greenButton}
+              onClick={saveXtreamLogin}
+              disabled={loading}
+            >
+              Salvar login
+            </button>
+
+            <button
+              style={styles.grayButton}
+              onClick={() => {
+                setEditingLoginUser(null)
+                setNewXtreamLogin('')
+              }}
+              disabled={loading}
+            >
+              Cancelar
+            </button>
+          </div>
         </div>
       )}
 
@@ -340,6 +489,18 @@ Senha: ${createdLogin.password}
               <p style={styles.email}>
                 {user.email}
               </p>
+
+              <small style={styles.xtreamLogin}>
+                Login Xtream: {getShortLogin(user)}
+              </small>
+
+              <br />
+
+              <small>
+                Servidor: {API}
+              </small>
+
+              <br />
 
               <small>
                 Plano: {user.plan || 'free'} • Conexões:{' '}
@@ -512,6 +673,24 @@ Senha: ${createdLogin.password}
                   Free
                 </button>
 
+                {user.role === 'client' && (
+                  <>
+                    <button
+                      style={styles.yellowButton}
+                      onClick={() => openEditLogin(user)}
+                    >
+                      Editar login
+                    </button>
+
+                    <button
+                      style={styles.smallDarkButton}
+                      onClick={() => copyUserXtreamLogin(user)}
+                    >
+                      Copiar Xtream
+                    </button>
+                  </>
+                )}
+
                 {user.role !== 'admin' && (
                   <button
                     style={styles.deleteButton}
@@ -669,6 +848,11 @@ const styles = {
     color: '#94a3b8'
   },
 
+  xtreamLogin: {
+    color: '#facc15',
+    fontWeight: 'bold'
+  },
+
   watchingText: {
     color: '#38bdf8',
     fontWeight: 'bold'
@@ -694,6 +878,12 @@ const styles = {
     flexWrap: 'wrap',
     justifyContent: 'flex-end',
     marginTop: 10
+  },
+
+  modalActions: {
+    display: 'flex',
+    gap: 10,
+    flexWrap: 'wrap'
   },
 
   quickActions: {
