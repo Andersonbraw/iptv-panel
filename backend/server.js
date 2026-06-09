@@ -635,6 +635,68 @@ function buildXtreamCategories(rows, detector, prefix) {
 }
 
 
+function normalizeXtreamCategoryIdParam(value) {
+  if (value === undefined || value === null || value === '') {
+    return ''
+  }
+
+  return String(value).trim()
+}
+
+function getVodCategoryIdForItem(item = {}) {
+  if (typeof stableXtreamCategoryId === 'function' && typeof detectVodCategorySafe === 'function') {
+    return stableXtreamCategoryId('vod', detectVodCategorySafe(item))
+  }
+
+  if (typeof getStableCategoryId === 'function' && typeof detectVodCategory === 'function') {
+    return getStableCategoryId('vod', detectVodCategory(item))
+  }
+
+  if (typeof getXtreamCategoryId === 'function') {
+    return getXtreamCategoryId(item.category || 'Filmes')
+  }
+
+  return '2000'
+}
+
+function getSeriesCategoryIdForItem(item = {}) {
+  if (typeof stableXtreamCategoryId === 'function' && typeof detectSeriesCategorySafe === 'function') {
+    return stableXtreamCategoryId('series', detectSeriesCategorySafe(item))
+  }
+
+  if (typeof getStableCategoryId === 'function' && typeof detectSeriesCategory === 'function') {
+    return getStableCategoryId('series', detectSeriesCategory(item))
+  }
+
+  if (typeof getXtreamCategoryId === 'function') {
+    return getXtreamCategoryId(item.category || 'Series')
+  }
+
+  return '3000'
+}
+
+function getLiveCategoryIdForItem(item = {}) {
+  const name = typeof detectLiveGroupByName === 'function'
+    ? detectLiveGroupByName(item.name, item.category)
+    : (item.category || 'Canais')
+
+  if (typeof stableXtreamCategoryId === 'function') {
+    return stableXtreamCategoryId('live', name)
+  }
+
+  if (typeof getStableCategoryId === 'function') {
+    return getStableCategoryId('live', name)
+  }
+
+  if (typeof getXtreamCategoryId === 'function') {
+    return getXtreamCategoryId(name)
+  }
+
+  return '1000'
+}
+
+
+
 async function fetchM3UText(playlistUrl) {
   console.log('M3U URL RECEBIDA:', playlistUrl)
   const fixedUrl =
@@ -5772,9 +5834,27 @@ app.get('/player_api.php', async (req, res) => {
         LIMIT 20000
       `)
 
-      return res.json(
-        buildXtreamCategories(result.rows, detectVodCategorySafe, 'vod')
-      )
+      const map = new Map()
+
+      for (const item of result.rows || []) {
+        const name = typeof detectVodCategorySafe === 'function'
+          ? detectVodCategorySafe(item)
+          : (typeof detectVodCategory === 'function' ? detectVodCategory(item) : (item.category || 'Filmes'))
+
+        const id = getVodCategoryIdForItem(item)
+
+        if (!map.has(id)) {
+          map.set(id, {
+            category_id: id,
+            category_name: name,
+            parent_id: 0
+          })
+        }
+      }
+
+      return res.json(Array.from(map.values()).sort((a, b) =>
+        String(a.category_name).localeCompare(String(b.category_name))
+      ))
     }
 
     if (action === 'get_series_categories') {
@@ -5787,113 +5867,147 @@ app.get('/player_api.php', async (req, res) => {
         LIMIT 20000
       `)
 
-      return res.json(
-        buildXtreamCategories(result.rows, detectSeriesCategorySafe, 'series')
-      )
-    }
+      const map = new Map()
 
-    if (action === 'get_live_streams') {
-      const result = await pool.query(`
-        SELECT id, name, url, category, logo
-        FROM channels
-        WHERE is_online = true
-        ORDER BY name ASC
-        LIMIT 5000
-      `)
+      for (const item of result.rows || []) {
+        const name = typeof detectSeriesCategorySafe === 'function'
+          ? detectSeriesCategorySafe(item)
+          : (typeof detectSeriesCategory === 'function' ? detectSeriesCategory(item) : (item.category || 'Séries'))
 
-      return res.json(result.rows.map((item, index) => ({
-        num: index + 1,
-        name: item.name || 'Canal',
-        stream_type: 'live',
-        stream_id: item.id,
-        stream_icon: item.logo || '',
-        epg_channel_id: '',
-        added: String(now),
-        category_id: getXtreamCategoryId(detectLiveGroupByName(item.name, item.category)),
-        custom_sid: '',
-        tv_archive: 0,
-        direct_source: item.url || `${baseUrl}/live/${encodeURIComponent(user.xtream_username || getShortLoginFromEmail(user.email) || user.email)}/${encodeURIComponent(user.password)}/${item.id}.ts`,
-        stream_url: item.url || `${baseUrl}/live/${encodeURIComponent(user.xtream_username || getShortLoginFromEmail(user.email) || user.email)}/${encodeURIComponent(user.password)}/${item.id}.ts`,
-        container_extension: 'ts',
-        tv_archive_duration: 0
-      })))
-    }
+        const id = getSeriesCategoryIdForItem(item)
 
-    if (action === 'get_vod_streams') {
-      const result = await pool.query(`
-        SELECT id, title, year, image, video, description
-        FROM movies
-        WHERE
-          LOWER(COALESCE(category, '')) NOT LIKE '%series%'
-          AND LOWER(COALESCE(category, '')) NOT LIKE '%séries%'
-          AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
-        ORDER BY title ASC
-        LIMIT 5000
-      `)
-
-      return res.json(result.rows.map((item, index) => ({
-        num: index + 1,
-        name: item.title || 'Filme',
-        title: item.title || 'Filme',
-        year: item.year || '',
-        stream_type: 'movie',
-        stream_id: item.id,
-        stream_icon: item.image || '',
-        rating: '',
-        rating_5based: 0,
-        added: String(now),
-        category_id: '1',
-        container_extension: getMovieExtension(item.video),
-        custom_sid: '',
-        direct_source: `${baseUrl}/movie/${encodeURIComponent(user.xtream_username || getShortLoginFromEmail(user.email) || user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`
-      })))
-    }
-
-    if (action === 'get_series') {
-      const result = await pool.query(`
-        SELECT id, title, year, image, video, description
-        FROM movies
-        WHERE
-          category = 'Series'
-          OR LOWER(COALESCE(video, '')) LIKE '%/series/%'
-          OR LOWER(COALESCE(title, '')) LIKE '%temporada%'
-          OR LOWER(COALESCE(title, '')) LIKE '%episodio%'
-          OR LOWER(COALESCE(title, '')) LIKE '%episódio%'
-          OR LOWER(COALESCE(title, '')) ~ 's[0-9]{1,2}e[0-9]{1,3}'
-        ORDER BY title ASC
-        LIMIT 5000
-      `)
-
-      const grouped = new Map()
-
-      for (const item of result.rows) {
-        const name = cleanXtreamSeriesName(item.title) || item.title || 'Série'
-
-        if (!grouped.has(name)) {
-          grouped.set(name, {
-            num: grouped.size + 1,
-            name,
-            title: name,
-            year: item.year || '',
-            series_id: item.id,
-            cover: item.image || '',
-            plot: item.description || '',
-            cast: '',
-            director: '',
-            genre: 'Séries',
-            releaseDate: '',
-            last_modified: String(now),
-            rating: '',
-            rating_5based: 0,
-            backdrop_path: [],
-            youtube_trailer: '',
-            episode_run_time: '',
-            category_id: '2'
+        if (!map.has(id)) {
+          map.set(id, {
+            category_id: id,
+            category_name: name,
+            parent_id: 0
           })
         }
       }
 
-      return res.json(Array.from(grouped.values()))
+      return res.json(Array.from(map.values()).sort((a, b) =>
+        String(a.category_name).localeCompare(String(b.category_name))
+      ))
+    }
+
+    if (action === 'get_live_streams') {
+      const categoryFilter = normalizeXtreamCategoryIdParam(req.query.category_id)
+
+      const result = await pool.query(`
+        SELECT *
+        FROM channels
+        WHERE is_online = true
+        ORDER BY name ASC
+        LIMIT 20000
+      `)
+
+      let rows = result.rows || []
+
+      if (categoryFilter) {
+        rows = rows.filter(item =>
+          String(getLiveCategoryIdForItem(item)) === String(categoryFilter)
+        )
+      }
+
+      const streams = rows.map((item, index) => ({
+        num: index + 1,
+        name: item.name,
+        stream_type: 'live',
+        stream_id: Number(item.id),
+        stream_icon: item.logo || '',
+        epg_channel_id: '',
+        added: '',
+        category_id: getLiveCategoryIdForItem(item),
+        custom_sid: '',
+        tv_archive: 0,
+        direct_source: '',
+        tv_archive_duration: 0
+      }))
+
+      return res.json(streams)
+    }
+
+    if (action === 'get_vod_streams') {
+      const categoryFilter = normalizeXtreamCategoryIdParam(req.query.category_id)
+
+      const result = await pool.query(`
+        SELECT *
+        FROM movies
+        WHERE category <> 'Series'
+          AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
+        ORDER BY title ASC
+        LIMIT 20000
+      `)
+
+      let rows = result.rows || []
+
+      if (categoryFilter) {
+        rows = rows.filter(item =>
+          String(getVodCategoryIdForItem(item)) === String(categoryFilter)
+        )
+      }
+
+      const streams = rows.map((item, index) => ({
+        num: index + 1,
+        name: item.title,
+        title: item.title,
+        stream_type: 'movie',
+        stream_id: Number(item.id),
+        movie_image: item.image || '',
+        cover: item.image || '',
+        plot: item.description || '',
+        category_id: getVodCategoryIdForItem(item),
+        container_extension: 'mp4',
+        rating: '',
+        rating_5based: 0,
+        added: String(Math.floor(new Date(item.created_at || Date.now()).getTime() / 1000)),
+        direct_source: ''
+      }))
+
+      return res.json(streams)
+    }
+
+    if (action === 'get_series') {
+      const categoryFilter = normalizeXtreamCategoryIdParam(req.query.category_id)
+
+      const result = await pool.query(`
+        SELECT *
+        FROM movies
+        WHERE category = 'Series'
+          OR LOWER(COALESCE(video, '')) LIKE '%/series/%'
+        ORDER BY title ASC
+        LIMIT 20000
+      `)
+
+      let rows = result.rows || []
+
+      if (categoryFilter) {
+        rows = rows.filter(item =>
+          String(getSeriesCategoryIdForItem(item)) === String(categoryFilter)
+        )
+      }
+
+      const series = rows.map((item, index) => ({
+        num: index + 1,
+        name: item.title,
+        title: item.title,
+        series_id: Number(item.id),
+        cover: item.image || '',
+        plot: item.description || '',
+        cast: '',
+        director: '',
+        genre: '',
+        releaseDate: '',
+        last_modified: String(Math.floor(new Date(item.created_at || Date.now()).getTime() / 1000)),
+        rating: '',
+        rating_5based: 0,
+        backdrop_path: item.banner ? [item.banner] : [],
+        youtube_trailer: '',
+        episode_run_time: '0',
+        category_id: getSeriesCategoryIdForItem(item)
+      }))
+
+      return res.json(series)
     }
 
     if (action === 'get_vod_info') {
