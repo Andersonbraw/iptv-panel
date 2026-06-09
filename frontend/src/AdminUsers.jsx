@@ -17,6 +17,7 @@ function AdminUsers({
   const [newXtreamLogin, setNewXtreamLogin] = useState('')
   const [newClientName, setNewClientName] = useState('')
   const [newClientPassword, setNewClientPassword] = useState('')
+  const [nowTime, setNowTime] = useState(Date.now())
 
   const headers = useMemo(() => {
     return {
@@ -31,6 +32,14 @@ function AdminUsers({
 
     return () => clearInterval(interval)
   }, [reloadUsers])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowTime(Date.now())
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [])
 
   function normalize(text = '') {
     return text
@@ -60,6 +69,60 @@ function AdminUsers({
     return {
       online: false,
       text: `🔴 Offline há ${Math.floor(diffMinutes)} min`
+    }
+  }
+
+  function getExpirationInfo(user) {
+    if (!user.expires_at) {
+      return {
+        expired: false,
+        text: 'Sem vencimento',
+        endTime: 'Sem horário'
+      }
+    }
+
+    const expireDate = new Date(user.expires_at)
+    const diffMs = expireDate.getTime() - nowTime
+
+    const endTime = expireDate.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    })
+
+    if (diffMs <= 0) {
+      return {
+        expired: true,
+        text: 'Expirado',
+        endTime
+      }
+    }
+
+    const totalSeconds = Math.floor(diffMs / 1000)
+    const days = Math.floor(totalSeconds / 86400)
+    const hours = Math.floor((totalSeconds % 86400) / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    const seconds = totalSeconds % 60
+
+    const parts = []
+
+    if (days > 0) {
+      parts.push(`${days}d`)
+    }
+
+    parts.push(String(hours).padStart(2, '0'))
+    parts.push(String(minutes).padStart(2, '0'))
+    parts.push(String(seconds).padStart(2, '0'))
+
+    return {
+      expired: false,
+      text: days > 0
+        ? `${days}d ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+        : `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`,
+      endTime
     }
   }
 
@@ -570,6 +633,7 @@ M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username |
 
       {filteredUsers.map(user => {
         const userStatus = getUserStatus(user)
+        const expirationInfo = getExpirationInfo(user)
 
         return (
           <div
@@ -615,6 +679,23 @@ M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username |
                 {user.expires_at
                   ? new Date(user.expires_at).toLocaleDateString('pt-BR')
                   : 'Sem vencimento'}
+              </small>
+
+              <br />
+
+              <small
+                style={{
+                  color: expirationInfo.expired ? '#ef4444' : '#facc15',
+                  fontWeight: 'bold'
+                }}
+              >
+                Tempo restante: {expirationInfo.text}
+              </small>
+
+              <br />
+
+              <small style={styles.expireTime}>
+                Acaba às: {expirationInfo.endTime}
               </small>
 
               <br />
@@ -962,6 +1043,11 @@ const styles = {
 
   watchingTime: {
     color: '#94a3b8'
+  },
+
+  expireTime: {
+    color: '#cbd5e1',
+    fontWeight: 'bold'
   },
 
   right: {
