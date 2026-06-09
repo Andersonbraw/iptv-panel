@@ -524,44 +524,37 @@ function normalizeText(value = '') {
 }
 
 
-function cleanCategoryName(value = '') {
-  let name = String(value || '')
-    .replace(/\[[^\]]*\]/g, '')
-    .replace(/\([^\)]*\)/g, '')
-    .replace(/[_|]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+function cleanXtreamCategoryNameSafe(value = '', fallback = 'Outros') {
+  const raw = String(value || '').trim()
+  const normalized = normalizeText(raw)
 
-  const normalized = normalizeText(name)
-
-  if (!name || /^\d+$/.test(name) || /^categoria\s+\d+$/i.test(name)) {
-    return 'Outros'
+  if (!raw || /^\d+$/.test(raw) || /^categoria\s+\d+$/i.test(raw)) {
+    return fallback
   }
 
-  if (normalized.includes('lancamento') || normalized.includes('lancamentos')) return 'Filmes - Lançamentos'
-  if (normalized.includes('acao') || normalized.includes('action')) return 'Filmes - Ação'
-  if (normalized.includes('aventura') || normalized.includes('adventure')) return 'Filmes - Aventura'
-  if (normalized.includes('comedia') || normalized.includes('comedy')) return 'Filmes - Comédia'
-  if (normalized.includes('drama')) return 'Filmes - Drama'
-  if (normalized.includes('terror') || normalized.includes('horror')) return 'Filmes - Terror'
-  if (normalized.includes('suspense') || normalized.includes('thriller')) return 'Filmes - Suspense'
-  if (normalized.includes('romance')) return 'Filmes - Romance'
-  if (normalized.includes('ficcao') || normalized.includes('sci fi') || normalized.includes('scifi')) return 'Filmes - Ficção Científica'
-  if (normalized.includes('fantasia') || normalized.includes('fantasy')) return 'Filmes - Fantasia'
-  if (normalized.includes('animacao') || normalized.includes('animation')) return 'Filmes - Animação'
-  if (normalized.includes('infantil') || normalized.includes('kids')) return 'Filmes - Infantil'
-  if (normalized.includes('documentario') || normalized.includes('documentary')) return 'Filmes - Documentário'
-  if (normalized.includes('nacional') || normalized.includes('brasil')) return 'Filmes - Nacionais'
-  if (normalized.includes('dublado')) return 'Filmes - Dublados'
-  if (normalized.includes('legendado') || normalized.includes('legendas')) return 'Filmes - Legendados'
-  if (normalized.includes('religioso') || normalized.includes('gospel')) return 'Filmes - Religiosos'
-  if (normalized.includes('show') || normalized.includes('musica')) return 'Filmes - Shows e Música'
+  if (normalized.includes('lancamento') || normalized.includes('lancamentos')) return 'Lançamentos'
+  if (normalized.includes('acao') || normalized.includes('action')) return 'Ação'
+  if (normalized.includes('aventura') || normalized.includes('adventure')) return 'Aventura'
+  if (normalized.includes('comedia') || normalized.includes('comedy')) return 'Comédia'
+  if (normalized.includes('drama')) return 'Drama'
+  if (normalized.includes('terror') || normalized.includes('horror')) return 'Terror'
+  if (normalized.includes('suspense') || normalized.includes('thriller')) return 'Suspense'
+  if (normalized.includes('romance')) return 'Romance'
+  if (normalized.includes('ficcao') || normalized.includes('sci fi') || normalized.includes('scifi')) return 'Ficção Científica'
+  if (normalized.includes('fantasia') || normalized.includes('fantasy')) return 'Fantasia'
+  if (normalized.includes('animacao') || normalized.includes('animation')) return 'Animação'
+  if (normalized.includes('infantil') || normalized.includes('kids')) return 'Infantil'
+  if (normalized.includes('documentario') || normalized.includes('documentary')) return 'Documentário'
+  if (normalized.includes('nacional') || normalized.includes('brasil')) return 'Nacionais'
+  if (normalized.includes('dublado')) return 'Dublados'
+  if (normalized.includes('legendado') || normalized.includes('legendas')) return 'Legendados'
 
-  return name
+  return raw
 }
 
-function detectVodCategory(item = {}) {
+function detectVodCategorySafe(item = {}) {
   const source = normalizeText(`${item.category || ''} ${item.title || item.name || ''}`)
+  const base = cleanXtreamCategoryNameSafe(item.category || '', 'Filmes')
 
   if (source.includes('lancamento') || source.includes('lancamentos')) return 'Filmes - Lançamentos'
   if (source.includes('acao') || source.includes('action')) return 'Filmes - Ação'
@@ -579,37 +572,35 @@ function detectVodCategory(item = {}) {
   if (source.includes('nacional') || source.includes('brasil')) return 'Filmes - Nacionais'
   if (source.includes('dublado')) return 'Filmes - Dublados'
   if (source.includes('legendado') || source.includes('legendas')) return 'Filmes - Legendados'
-  if (source.includes('religioso') || source.includes('gospel')) return 'Filmes - Religiosos'
-  if (source.includes('show') || source.includes('musica')) return 'Filmes - Shows e Música'
 
-  return cleanCategoryName(item.category || 'Filmes')
+  return base.startsWith('Filmes') ? base : `Filmes - ${base}`
 }
 
-function detectSeriesCategory(item = {}) {
+function detectSeriesCategorySafe(item = {}) {
   const source = normalizeText(`${item.category || ''} ${item.title || item.name || ''}`)
+  const base = cleanXtreamCategoryNameSafe(item.category || '', 'Séries')
 
-  if (source.includes('lancamento') || source.includes('lancamentos')) return 'Séries Lançamentos'
-  if (source.includes('acao') || source.includes('action')) return 'Séries Ação'
-  if (source.includes('aventura') || source.includes('adventure')) return 'Séries Aventura'
-  if (source.includes('comedia') || source.includes('comedy')) return 'Séries Comédia'
-  if (source.includes('drama')) return 'Séries Drama'
-  if (source.includes('terror') || source.includes('horror')) return 'Séries Terror'
-  if (source.includes('suspense') || source.includes('thriller')) return 'Séries Suspense'
-  if (source.includes('romance')) return 'Séries Romance'
-  if (source.includes('ficcao') || source.includes('sci fi') || source.includes('scifi')) return 'Séries Ficção Científica'
-  if (source.includes('fantasia') || source.includes('fantasy')) return 'Séries Fantasia'
-  if (source.includes('animacao') || source.includes('animation')) return 'Séries Animação'
-  if (source.includes('infantil') || source.includes('kids')) return 'Séries Infantil'
-  if (source.includes('documentario') || source.includes('documentary')) return 'Séries Documentário'
-  if (source.includes('nacional') || source.includes('brasil')) return 'Séries Nacionais'
-  if (source.includes('dublado')) return 'Séries Dubladas'
-  if (source.includes('legendado') || source.includes('legendas')) return 'Séries Legendadas'
+  if (source.includes('lancamento') || source.includes('lancamentos')) return 'Séries - Lançamentos'
+  if (source.includes('acao') || source.includes('action')) return 'Séries - Ação'
+  if (source.includes('aventura') || source.includes('adventure')) return 'Séries - Aventura'
+  if (source.includes('comedia') || source.includes('comedy')) return 'Séries - Comédia'
+  if (source.includes('drama')) return 'Séries - Drama'
+  if (source.includes('terror') || source.includes('horror')) return 'Séries - Terror'
+  if (source.includes('suspense') || source.includes('thriller')) return 'Séries - Suspense'
+  if (source.includes('romance')) return 'Séries - Romance'
+  if (source.includes('ficcao') || source.includes('sci fi') || source.includes('scifi')) return 'Séries - Ficção Científica'
+  if (source.includes('fantasia') || source.includes('fantasy')) return 'Séries - Fantasia'
+  if (source.includes('animacao') || source.includes('animation')) return 'Séries - Animação'
+  if (source.includes('infantil') || source.includes('kids')) return 'Séries - Infantil'
+  if (source.includes('documentario') || source.includes('documentary')) return 'Séries - Documentário'
+  if (source.includes('nacional') || source.includes('brasil')) return 'Séries - Nacionais'
+  if (source.includes('dublado')) return 'Séries - Dubladas'
+  if (source.includes('legendado') || source.includes('legendas')) return 'Séries - Legendadas'
 
-  const cleaned = cleanCategoryName(item.category || 'Séries')
-  return cleaned.toLowerCase().startsWith('séries') ? cleaned : `Séries ${cleaned}`
+  return base.startsWith('Séries') ? base : `Séries - ${base}`
 }
 
-function getStableCategoryId(prefix, name = '') {
+function stableXtreamCategoryId(prefix, name = '') {
   const text = `${prefix}:${name}`
   let hash = 0
 
@@ -619,15 +610,15 @@ function getStableCategoryId(prefix, name = '') {
   }
 
   const base = prefix === 'live' ? 1000 : prefix === 'vod' ? 2000 : 3000
-  return String(base + (Math.abs(hash) % 899))
+  return String(base + (Math.abs(hash) % 900))
 }
 
-function makeCategoryList(rows, detector, prefix) {
+function buildXtreamCategories(rows, detector, prefix) {
   const map = new Map()
 
   for (const row of rows || []) {
     const name = detector(row)
-    const id = getStableCategoryId(prefix, name)
+    const id = stableXtreamCategoryId(prefix, name)
 
     if (!map.has(id)) {
       map.set(id, {
@@ -4587,11 +4578,9 @@ app.post('/admin/fix-series-categories', auth, adminOnly, async (req, res) => {
   try {
     const before = await pool.query(`
       SELECT
-        COUNT(*) FILTER (WHERE
-          category = 'Series'
+        COUNT(*) FILTER (WHERE category = 'Series'
           OR LOWER(COALESCE(video, '')) LIKE '%/series/%')::INTEGER AS series_before,
-        COUNT(*) FILTER (WHERE
-          category <> 'Series'
+        COUNT(*) FILTER (WHERE category <> 'Series'
           AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%')::INTEGER AS movies_before
       FROM movies
     `)
@@ -4625,11 +4614,9 @@ app.post('/admin/fix-series-categories', auth, adminOnly, async (req, res) => {
 
     const after = await pool.query(`
       SELECT
-        COUNT(*) FILTER (WHERE
-          category = 'Series'
+        COUNT(*) FILTER (WHERE category = 'Series'
           OR LOWER(COALESCE(video, '')) LIKE '%/series/%')::INTEGER AS series_after,
-        COUNT(*) FILTER (WHERE
-          category <> 'Series'
+        COUNT(*) FILTER (WHERE category <> 'Series'
           AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%')::INTEGER AS movies_after
       FROM movies
     `)
@@ -5326,10 +5313,9 @@ async function updateXtreamWatching(user, type, title) {
     await pool.query(
       `
       UPDATE users
-      SET
-        watching = $1,
-        watching_type = $2,
-        watching_updated_at = NOW()
+      SET watching = $1,
+          watching_type = $2,
+          watching_updated_at = NOW()
       WHERE id = $3
       `,
       [
@@ -5340,6 +5326,31 @@ async function updateXtreamWatching(user, type, title) {
     )
   } catch (err) {
     console.log('ERRO UPDATE XTREAM WATCHING:', err.message)
+  }
+}
+
+
+async function setWatchingNow(user, type, title) {
+  try {
+    if (!user || !user.id) return
+
+    await pool.query(
+      `
+      UPDATE users
+      SET
+        watching = $1,
+        watching_type = $2,
+        watching_updated_at = NOW()
+      WHERE id = $3
+      `,
+      [
+        String(title || '').substring(0, 180),
+        String(type || '').substring(0, 50),
+        user.id
+      ]
+    )
+  } catch (err) {
+    console.log('ERRO SET WATCHING NOW:', err.message)
   }
 }
 
@@ -5464,7 +5475,7 @@ function detectLiveGroupByName(name = '', category = '') {
     text.includes('tooncast') ||
     text.includes('discovery kids') ||
     text.includes('gloob')
-  ) return 'Filmes - Infantil'
+  ) return 'Infantil'
 
   if (
     text.includes('cnn') ||
@@ -5519,7 +5530,7 @@ function detectLiveGroupByName(name = '', category = '') {
     text.includes('cancao nova') ||
     text.includes('aparecida') ||
     text.includes('evangelizar')
-  ) return 'Filmes - Religiosos'
+  ) return 'Religiosos'
 
   if (
     text.includes('24h') ||
@@ -5587,6 +5598,89 @@ function getXtreamEpisode(title = '') {
   return match ? Number(match[1]) : 1
 }
 
+
+// ASSISTINDO_AGORA_DIRECT_ROUTES
+async function handleXtreamDirectStream(req, res, type) {
+  try {
+    const user = await getXtreamUser(req.params.username, req.params.password)
+
+    if (!user) {
+      return res.status(401).send('login inválido')
+    }
+
+    const id = Number(req.params.id)
+
+    let result
+
+    if (type === 'live') {
+      result = await pool.query(
+        `
+        SELECT name, url
+        FROM channels
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [id]
+      )
+    } else {
+      result = await pool.query(
+        `
+        SELECT title, video
+        FROM movies
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [id]
+      )
+    }
+
+    if (result.rows.length === 0) {
+      return res.status(404).send('conteúdo não encontrado')
+    }
+
+    const item = result.rows[0]
+    const streamUrl = item.url || item.video
+
+    if (!streamUrl) {
+      return res.status(404).send('stream não encontrado')
+    }
+
+    if (type === 'live') {
+      await setWatchingNow(user, 'TV ao vivo', item.name || 'Canal')
+    }
+
+    if (type === 'movie') {
+      await setWatchingNow(user, 'Filme', item.title || 'Filme')
+    }
+
+    if (type === 'series') {
+      await setWatchingNow(user, 'Série', item.title || 'Série')
+    }
+
+    return res.redirect(streamUrl)
+  } catch (err) {
+    console.log('ERRO DIRECT XTREAM STREAM:', err.message)
+    return res.status(500).send('stream erro')
+  }
+}
+
+app.get('/live/:username/:password/:id.ts', async (req, res) => {
+  await handleXtreamDirectStream(req, res, 'live')
+})
+
+app.get('/live/:username/:password/:id.m3u8', async (req, res) => {
+  await handleXtreamDirectStream(req, res, 'live')
+})
+
+app.get('/movie/:username/:password/:id.mp4', async (req, res) => {
+  await handleXtreamDirectStream(req, res, 'movie')
+})
+
+app.get('/series/:username/:password/:id.mp4', async (req, res) => {
+  await handleXtreamDirectStream(req, res, 'series')
+})
+
+
 app.get('/player_api.php', async (req, res) => {
   try {
     const username = req.query.username || ''
@@ -5645,13 +5739,26 @@ app.get('/player_api.php', async (req, res) => {
         FROM channels
         WHERE is_online = true
         ORDER BY name ASC
-        LIMIT 10000
+        LIMIT 5000
       `)
 
-      return res.json(makeCategoryList(
-        result.rows,
-        row => detectLiveGroupByName(row.name, row.category),
-        'live'
+      const groups = new Map()
+
+      for (const row of result.rows) {
+        const groupName = detectLiveGroupByName(row.name, row.category)
+        const groupId = getXtreamCategoryId(groupName)
+
+        if (!groups.has(groupId)) {
+          groups.set(groupId, {
+            category_id: groupId,
+            category_name: groupName,
+            parent_id: 0
+          })
+        }
+      }
+
+      return res.json(Array.from(groups.values()).sort((a, b) =>
+        String(a.category_name).localeCompare(String(b.category_name))
       ))
     }
 
@@ -5659,36 +5766,30 @@ app.get('/player_api.php', async (req, res) => {
       const result = await pool.query(`
         SELECT title, category, video
         FROM movies
-        WHERE
-          category <> 'Series'
+        WHERE category <> 'Series'
           AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
         ORDER BY title ASC
         LIMIT 20000
       `)
 
-      return res.json(makeCategoryList(
-        result.rows,
-        detectVodCategory,
-        'vod'
-      ))
+      return res.json(
+        buildXtreamCategories(result.rows, detectVodCategorySafe, 'vod')
+      )
     }
 
     if (action === 'get_series_categories') {
       const result = await pool.query(`
         SELECT title, category, video
         FROM movies
-        WHERE
-          category = 'Series'
+        WHERE category = 'Series'
           OR LOWER(COALESCE(video, '')) LIKE '%/series/%'
         ORDER BY title ASC
         LIMIT 20000
       `)
 
-      return res.json(makeCategoryList(
-        result.rows,
-        detectSeriesCategory,
-        'series'
-      ))
+      return res.json(
+        buildXtreamCategories(result.rows, detectSeriesCategorySafe, 'series')
+      )
     }
 
     if (action === 'get_live_streams') {
@@ -5708,7 +5809,7 @@ app.get('/player_api.php', async (req, res) => {
         stream_icon: item.logo || '',
         epg_channel_id: '',
         added: String(now),
-        category_id: getStableCategoryId('live', detectLiveGroupByName(item.name, item.category)),
+        category_id: getXtreamCategoryId(detectLiveGroupByName(item.name, item.category)),
         custom_sid: '',
         tv_archive: 0,
         direct_source: item.url || `${baseUrl}/live/${encodeURIComponent(user.xtream_username || getShortLoginFromEmail(user.email) || user.email)}/${encodeURIComponent(user.password)}/${item.id}.ts`,
