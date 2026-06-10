@@ -640,30 +640,6 @@ function detectSeriesCategorySafe(item = {}) {
   return base.startsWith('Séries') ? base : `Séries - ${base}`
 }
 
-
-function getImportMovieCategory(item = {}, fallback = 'Filmes') {
-  const rawCategory =
-    item.category_name ||
-    item.category ||
-    item.group ||
-    item.group_title ||
-    ''
-
-  const cleanCategory = cleanXtreamCategoryNameSafe(rawCategory, fallback)
-
-  if (
-    !rawCategory ||
-    normalizeText(cleanCategory) === 'filmes' ||
-    normalizeText(cleanCategory) === 'movies' ||
-    normalizeText(cleanCategory) === 'vod'
-  ) {
-    return fallback
-  }
-
-  return cleanCategory
-}
-
-
 function stableXtreamCategoryId(prefix, name = '') {
   const text = `${prefix}:${name}`
   let hash = 0
@@ -3992,7 +3968,7 @@ app.post('/import-m3u-file', auth, adminOnly, async (req, res) => {
               [
                 current.title,
                 '',
-                getImportMovieCategory({ group: current.group, title: current.title }, 'Filmes'),
+                cleanXtreamCategoryNameSafe(current.group || '', 'Filmes'),
                 current.logo,
                 current.logo,
                 streamUrl,
@@ -4429,7 +4405,7 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
               '',
               targetType === 'Series'
                 ? 'Series'
-                : getImportMovieCategory({ group: current.group, title: current.title }, 'Filmes'),
+                : cleanXtreamCategoryNameSafe(current.group || '', 'Filmes'),
               current.logo,
               current.logo,
               streamUrl,
@@ -4862,6 +4838,49 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
       })
     }
 
+    let liveCategories = []
+    let vodCategories = []
+    let seriesCategories = []
+
+    try {
+      liveCategories = await getJson(makeApiUrl('get_live_categories'))
+    } catch {
+      liveCategories = []
+    }
+
+    try {
+      vodCategories = await getJson(makeApiUrl('get_vod_categories'))
+    } catch {
+      vodCategories = []
+    }
+
+    try {
+      seriesCategories = await getJson(makeApiUrl('get_series_categories'))
+    } catch {
+      seriesCategories = []
+    }
+
+    const liveCategoryMap = new Map(
+      (Array.isArray(liveCategories) ? liveCategories : []).map(item => [
+        String(item.category_id || ''),
+        item.category_name || item.name || ''
+      ])
+    )
+
+    const vodCategoryMap = new Map(
+      (Array.isArray(vodCategories) ? vodCategories : []).map(item => [
+        String(item.category_id || ''),
+        item.category_name || item.name || ''
+      ])
+    )
+
+    const seriesCategoryMap = new Map(
+      (Array.isArray(seriesCategories) ? seriesCategories : []).map(item => [
+        String(item.category_id || ''),
+        item.category_name || item.name || ''
+      ])
+    )
+
     const live = await getJson(makeApiUrl('get_live_streams'))
     const vod = await getJson(makeApiUrl('get_vod_streams'))
     const seriesList = await getJson(makeApiUrl('get_series'))
@@ -4898,7 +4917,9 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
           [
             item.name || 'Canal',
             streamUrl,
-            item.category_name || `Categoria ${item.category_id || 'TV'}`,
+            item.category_name ||
+              liveCategoryMap.get(String(item.category_id || '')) ||
+              `Categoria ${item.category_id || 'TV'}`,
             item.stream_icon || ''
           ]
         )
@@ -4964,12 +4985,11 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
               String(item.category_name || '').toLowerCase().includes('serie')
             )
               ? 'Series'
-              : getImportMovieCategory(
-                  {
-                    category_name: item.category_name,
-                    category: item.category,
-                    title: item.name
-                  },
+              : cleanXtreamCategoryNameSafe(
+                  item.category_name ||
+                    item.category ||
+                    vodCategoryMap.get(String(item.category_id || '')) ||
+                    `Categoria ${item.category_id || 'Filmes'}`,
                   'Filmes'
                 ),
             item.stream_icon || '',
@@ -5027,7 +5047,13 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
           [
             item.name || 'Série',
             item.year || '',
-            'Series',
+            cleanXtreamCategoryNameSafe(
+              item.category_name ||
+                item.category ||
+                seriesCategoryMap.get(String(item.category_id || '')) ||
+                'Series',
+              'Series'
+            ),
             item.cover || '',
             item.cover || '',
             streamUrl,
