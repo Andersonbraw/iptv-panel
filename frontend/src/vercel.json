@@ -1,8 +1,12 @@
 {
   "rewrites": [
     {
+      "source": "/c/:username",
+      "destination": "/"
+    },
+    {
       "source": "/(.*)",
-      "destination": "/index.html"
+      "destination": "/"
     }
   ]
 }
