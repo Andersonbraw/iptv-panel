@@ -517,17 +517,41 @@ function normalizeGithubUrl(url) {
 }
 
 
-function isRealLiveChannelForXtream(item = {}) {
+
+function isBlockedLiveCategory(item = {}) {
   const name = normalizeText(item.name || item.title || '')
   const category = normalizeText(item.category || '')
   const url = normalizeText(item.url || item.video || '')
   const source = `${name} ${category} ${url}`
 
+  const blocked = [
+    'filme',
+    'filmes',
+    'movie',
+    'movies',
+    'vod',
+    'serie',
+    'series',
+    'série',
+    'séries',
+    'temporada',
+    'episodio',
+    'episódio'
+  ]
+
+  if (url.includes('/movie/') || url.includes('/series/')) return true
+
+  return blocked.some(word => source.includes(word))
+}
+
+
+function isRealLiveChannelForXtream(item = {}) {
+  if (isBlockedLiveCategory(item)) return false
+
+  const url = normalizeText(item.url || item.video || '')
+
+  if (!url) return false
   if (url.includes('/movie/') || url.includes('/series/')) return false
-  if (category.includes('filme') || category.includes('movie') || category.includes('vod')) return false
-  if (category.includes('serie') || category.includes('série') || category.includes('series')) return false
-  if (name.includes('filme') || name.includes('movie') || name.includes('vod')) return false
-  if (name.includes('serie') || name.includes('série') || name.includes('series')) return false
 
   return true
 }
@@ -5763,13 +5787,22 @@ app.get('/player_api.php', async (req, res) => {
       const map = new Map()
 
       for (const item of rows) {
-        const name = detectLiveGroupByName(item.name, item.category)
-        const id = getXtreamCategoryId(name)
+        const categoryName = detectLiveGroupByName(item.name, item.category)
+
+        if (isBlockedLiveCategory({
+          name: categoryName,
+          category: categoryName,
+          url: item.url
+        })) {
+          continue
+        }
+
+        const id = getXtreamCategoryId(categoryName)
 
         if (!map.has(id)) {
           map.set(id, {
             category_id: id,
-            category_name: name,
+            category_name: categoryName,
             parent_id: 0
           })
         }
@@ -5819,6 +5852,15 @@ app.get('/player_api.php', async (req, res) => {
         )
       }
 
+      rows = rows.filter(item => {
+        const categoryName = detectLiveGroupByName(item.name, item.category)
+        return !isBlockedLiveCategory({
+          name: categoryName,
+          category: categoryName,
+          url: item.url
+        })
+      })
+
       const streams = rows.map((item, index) => ({
         num: index + 1,
         name: item.name,
@@ -5848,7 +5890,7 @@ app.get('/player_api.php', async (req, res) => {
         LIMIT 20000
       `)
 
-      const streams = (result.rows || []).map((item, index) => ({
+      return res.json((result.rows || []).map((item, index) => ({
         num: index + 1,
         name: item.title,
         title: item.title,
@@ -5863,9 +5905,7 @@ app.get('/player_api.php', async (req, res) => {
         rating_5based: 0,
         added: String(Math.floor(new Date(item.created_at || Date.now()).getTime() / 1000)),
         direct_source: ''
-      }))
-
-      return res.json(streams)
+      })))
     }
 
     if (action === 'get_series') {
@@ -5879,7 +5919,7 @@ app.get('/player_api.php', async (req, res) => {
         LIMIT 20000
       `)
 
-      const series = (result.rows || []).map((item, index) => ({
+      return res.json((result.rows || []).map((item, index) => ({
         num: index + 1,
         name: item.title,
         title: item.title,
@@ -5897,9 +5937,7 @@ app.get('/player_api.php', async (req, res) => {
         youtube_trailer: '',
         episode_run_time: '0',
         category_id: '3000'
-      }))
-
-      return res.json(series)
+      })))
     }
 
     if (action === 'get_vod_info') {
