@@ -6,7 +6,7 @@ import AdminPanel from './AdminPanel'
 import ClientPanel from './ClientPanel'
 import ResellerPanel from './ResellerPanel'
 
-const API = 'https://iptv-backend-cuxf.onrender.com'
+const API = 'https://api.nexoratvs.shop'
 
 function App() {
   const [user, setUser] = useState(() => {

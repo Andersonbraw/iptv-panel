@@ -8,7 +8,7 @@ import AdminSeries from './AdminSeries'
 import AdminResellers from './AdminResellers'
 import AdminReports from './AdminReports'
 
-const API = 'https://iptv-backend-cuxf.onrender.com'
+const API = 'https://api.nexoratvs.shop'
 
 function AdminPanel({ user, setUser, logout }) {
   const [adminUsers, setAdminUsers] = useState([])

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 
-const API = 'https://iptv-backend-cuxf.onrender.com'
+const API = 'https://api.nexoratvs.shop'
 
 function money(value) {
   return Number(value || 0).toLocaleString('pt-BR', {

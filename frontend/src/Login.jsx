@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import axios from 'axios'
 
-const API = 'https://iptv-backend-cuxf.onrender.com'
+const API = 'https://api.nexoratvs.shop'
 
 function Login({ setUser }) {
   const [email, setEmail] = useState('')

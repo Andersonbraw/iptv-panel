@@ -9,7 +9,7 @@ import axios from 'axios'
 import Hls from 'hls.js'
 
 const API =
-  'https://iptv-backend-cuxf.onrender.com'
+  'https://api.nexoratvs.shop'
 
 const PLACEHOLDER =
   'https://upload.wikimedia.org/wikipedia/commons/6/65/No-Image-Placeholder.svg'

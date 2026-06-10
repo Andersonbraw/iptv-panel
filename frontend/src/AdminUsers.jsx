@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 
 const API =
-  'https://iptv-backend-cuxf.onrender.com'
+  'https://api.nexoratvs.shop'
 
 function AdminUsers({
   users,

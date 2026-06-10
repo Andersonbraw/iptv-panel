@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 
 const API =
-  'https://iptv-backend-cuxf.onrender.com'
+  'https://api.nexoratvs.shop'
 
 const PLACEHOLDER =
   'https://ui-avatars.com/api/?name=SERIE&background=020617&color=ffffff&size=300'

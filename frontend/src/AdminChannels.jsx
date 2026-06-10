@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 
-const API = 'https://iptv-backend-cuxf.onrender.com'
+const API = 'https://api.nexoratvs.shop'
 
 const PLACEHOLDER =
   'https://upload.wikimedia.org/wikipedia/commons/6/65/No-Image-Placeholder.svg'
