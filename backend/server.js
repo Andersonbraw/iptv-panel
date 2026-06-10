@@ -5837,19 +5837,26 @@ async function handleXtreamDirectStream(req, res, type) {
       return res.status(404).send('stream não encontrado')
     }
 
-    if (type === 'live') {
-      await setWatchingNow(user, 'TV ao vivo', item.name || 'Canal')
+    // Não deixa erro do "Assistindo agora" quebrar o play do filme/canal.
+    try {
+      if (type === 'live') {
+        await setWatchingNow(user, 'TV ao vivo', item.name || 'Canal')
+      }
+
+      if (type === 'movie') {
+        await setWatchingNow(user, 'Filme', item.title || 'Filme')
+      }
+
+      if (type === 'series') {
+        await setWatchingNow(user, 'Série', item.title || 'Série')
+      }
+    } catch (watchErr) {
+      console.log('AVISO WATCHING NOW:', watchErr.message)
     }
 
-    if (type === 'movie') {
-      await setWatchingNow(user, 'Filme', item.title || 'Filme')
-    }
-
-    if (type === 'series') {
-      await setWatchingNow(user, 'Série', item.title || 'Série')
-    }
-
-    return res.redirect(streamUrl)
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Cache-Control', 'no-cache')
+    return res.redirect(302, streamUrl)
   } catch (err) {
     console.log('ERRO DIRECT XTREAM STREAM:', err.message)
     return res.status(500).send('stream erro')
@@ -6113,7 +6120,7 @@ app.get('/player_api.php', async (req, res) => {
         rating: '',
         rating_5based: 0,
         added: String(Math.floor(new Date(item.created_at || Date.now()).getTime() / 1000)),
-        direct_source: `${baseUrl}/movie/${encodeURIComponent(user.xtream_username || getShortLoginFromEmail(user.email) || user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`
+        direct_source: item.video || ''
       })))
     }
 
@@ -6192,7 +6199,7 @@ app.get('/player_api.php', async (req, res) => {
           category_id: '1',
           container_extension: getMovieExtension(item.video),
           custom_sid: '',
-          direct_source: `${baseUrl}/movie/${encodeURIComponent(user.xtream_username || getShortLoginFromEmail(user.email) || user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`
+          direct_source: item.video || ''
         }
       })
     }
@@ -6259,7 +6266,7 @@ app.get('/player_api.php', async (req, res) => {
           custom_sid: '',
           added: String(now),
           season,
-          direct_source: `${baseUrl}/series/${encodeURIComponent(user.xtream_username || getShortLoginFromEmail(user.email) || user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`
+          direct_source: item.video || ''
         })
       }
 
