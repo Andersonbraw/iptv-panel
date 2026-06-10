@@ -5,6 +5,7 @@ import Login from './Login'
 import AdminPanel from './AdminPanel'
 import ClientPanel from './ClientPanel'
 import ResellerPanel from './ResellerPanel'
+import ClientShortPage from './ClientShortPage'
 
 const API = 'https://api.nexoratvs.shop'
 
@@ -66,6 +67,12 @@ function App() {
 
     return () => clearInterval(interval)
   }, [user?.id, validateSession])
+
+  const shortMatch = window.location.pathname.match(/^\/c\/([^/]+)/)
+
+  if (shortMatch) {
+    return <ClientShortPage username={decodeURIComponent(shortMatch[1])} />
+  }
 
   if (!user) {
     return <Login setUser={setUser} />

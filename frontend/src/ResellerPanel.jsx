@@ -3,7 +3,8 @@ import axios from 'axios'
 
 const API = 'https://api.nexoratvs.shop'
 
-function money(value) {
+
+const PANEL = 'https://nexoratvs.shop'function money(value) {
   return Number(value || 0).toLocaleString('pt-BR', {
     style: 'currency',
     currency: 'BRL'
@@ -218,6 +219,14 @@ function ResellerPanel({ user, logout }) {
     return `${API}/get.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&type=m3u_plus&output=mpegts`
   }
 
+  function getShortLink(client) {
+    const username = getShortLogin(client)
+
+    if (!username) return ''
+
+    return `${PANEL}/c/${encodeURIComponent(username)}`
+  }
+
   function getExpirationInfo(client) {
     if (!client.expires_at) {
       return {
@@ -276,6 +285,18 @@ Senha: ${client.password || 'senha do cliente'}
     `)
 
     alert('Dados Xtream copiados')
+  }
+
+  function copyShortLink(client) {
+    const link = getShortLink(client)
+
+    if (!link) {
+      alert('Login indisponível')
+      return
+    }
+
+    navigator.clipboard.writeText(link)
+    alert('Link curto copiado')
   }
 
   function copyM3U(client) {
@@ -389,6 +410,8 @@ Senha: ${createdLogin.password}
 Servidor: ${API}
 
 M3U: ${API}/get.php?username=${encodeURIComponent(shortLogin)}&password=${encodeURIComponent(createdLogin.password)}&type=m3u_plus&output=mpegts
+
+Link curto: ${PANEL}/c/${encodeURIComponent(shortLogin)}
     `)
 
     alert('Login copiado')
@@ -510,6 +533,7 @@ M3U: ${API}/get.php?username=${encodeURIComponent(shortLogin)}&password=${encode
             <input readOnly value={`Servidor: ${API}`} style={styles.copyInput} />
             <input readOnly value={`Senha: ${createdLogin.password}`} style={styles.copyInput} />
             <input readOnly value={`M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username || String(createdLogin.email || '').replace(/\D/g, ''))}&password=${encodeURIComponent(createdLogin.password)}&type=m3u_plus&output=mpegts`} style={styles.copyInput} />
+            <input readOnly value={`Link curto: ${PANEL}/c/${encodeURIComponent(createdLogin.xtream_username || String(createdLogin.email || '').replace(/\D/g, ''))}`} style={styles.copyInput} />
             <button style={styles.greenButton} onClick={copyLogin}>Copiar login</button>
           </div>
         )}
@@ -626,6 +650,7 @@ M3U: ${API}/get.php?username=${encodeURIComponent(shortLogin)}&password=${encode
               <button style={styles.purpleButton} onClick={() => resetPassword(client)}>Resetar senha</button>
               <button style={styles.blueButton} onClick={() => copyXtream(client)}>Copiar Xtream</button>
               <button style={styles.purpleButton} onClick={() => copyM3U(client)}>Gerar M3U</button>
+              <button style={styles.blueButton} onClick={() => copyShortLink(client)}>Link curto</button>
               <button style={styles.grayButton} onClick={() => updateClient(client, { max_connections: 1 })}>1 conexão</button>
               <button style={styles.grayButton} onClick={() => updateClient(client, { max_connections: 2 })}>2 conexões</button>
               <button style={styles.grayButton} onClick={() => updateClient(client, { max_connections: 3 })}>3 conexões</button>

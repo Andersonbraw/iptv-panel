@@ -6422,6 +6422,191 @@ app.get('/get.php', async (req, res) => {
 })
 
 
+
+const PANEL_PUBLIC_URL = process.env.PANEL_PUBLIC_URL || 'https://nexoratvs.shop'
+const API_PUBLIC_URL = process.env.API_PUBLIC_URL || 'https://api.nexoratvs.shop'
+
+function buildPublicClientLinks(user) {
+  const username = user.xtream_username || getShortLoginFromEmail(user.email) || user.email || ''
+  const password = user.password || ''
+
+  return {
+    username,
+    password,
+    panel_url: `${PANEL_PUBLIC_URL}/c/${encodeURIComponent(username)}`,
+    server_url: API_PUBLIC_URL,
+    xtream: {
+      server: API_PUBLIC_URL,
+      username,
+      password
+    },
+    m3u: `${API_PUBLIC_URL}/get.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&type=m3u_plus&output=mpegts`,
+    player_api: `${API_PUBLIC_URL}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
+  }
+}
+
+app.get('/short/:username', async (req, res) => {
+  try {
+    const username = String(req.params.username || '').trim()
+
+    if (!username) {
+      return res.status(400).json({ error: 'login inválido' })
+    }
+
+    const result = await pool.query(
+      `
+      SELECT
+        id,
+        name,
+        email,
+        password,
+        xtream_username,
+        status,
+        plan,
+        max_connections,
+        expires_at
+      FROM users
+      WHERE
+        role = 'client'
+        AND (
+          LOWER(COALESCE(xtream_username, '')) = LOWER($1)
+          OR LOWER(email) = LOWER($1)
+          OR REGEXP_REPLACE(email, '[^0-9]', '', 'g') = $1
+        )
+      LIMIT 1
+      `,
+      [username]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'cliente não encontrado' })
+    }
+
+    const user = result.rows[0]
+    const links = buildPublicClientLinks(user)
+
+    return res.json({
+      success: true,
+      client: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        status: user.status,
+        plan: user.plan,
+        max_connections: user.max_connections,
+        expires_at: user.expires_at
+      },
+      links
+    })
+  } catch (err) {
+    console.log('ERRO SHORT CLIENT:', err)
+    return res.status(500).json({ error: 'erro ao gerar link curto' })
+  }
+})
+
+app.get('/c/:username', async (req, res) => {
+  try {
+    const username = String(req.params.username || '').trim()
+
+    const result = await pool.query(
+      `
+      SELECT
+        name,
+        email,
+        password,
+        xtream_username,
+        status,
+        plan,
+        max_connections,
+        expires_at
+      FROM users
+      WHERE
+        role = 'client'
+        AND (
+          LOWER(COALESCE(xtream_username, '')) = LOWER($1)
+          OR LOWER(email) = LOWER($1)
+          OR REGEXP_REPLACE(email, '[^0-9]', '', 'g') = $1
+        )
+      LIMIT 1
+      `,
+      [username]
+    )
+
+    if (result.rows.length === 0) {
+      return res.status(404).send('Cliente não encontrado')
+    }
+
+    const user = result.rows[0]
+    const links = buildPublicClientLinks(user)
+    const expires = user.expires_at ? new Date(user.expires_at).toLocaleString('pt-BR') : 'Sem vencimento'
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8')
+    return res.send(`<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nexora TV - Dados do Cliente</title>
+  <style>
+    body{margin:0;background:#000814;color:#fff;font-family:Arial,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+    .box{width:min(760px,100%);background:linear-gradient(180deg,#07142b,#020617);border:1px solid rgba(56,189,248,.25);border-radius:24px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.45)}
+    h1{color:#38bdf8;margin:0 0 8px;font-size:34px}.muted{color:#94a3b8}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}.card{background:#020617;border:1px solid #1e3a5f;border-radius:16px;padding:14px}.label{color:#38bdf8;font-size:12px;text-transform:uppercase;font-weight:bold}.value{font-size:20px;font-weight:bold;margin-top:5px;word-break:break-all}.link{background:#07142b;color:#fff;border:1px solid #334155;border-radius:14px;padding:12px;width:100%;box-sizing:border-box;margin-top:8px}button,a.btn{border:0;border-radius:14px;padding:13px 16px;font-weight:bold;cursor:pointer;text-decoration:none;text-align:center}.buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:18px}.blue{background:#38bdf8;color:#000}.green{background:#22c55e;color:#000}.purple{background:#a855f7;color:#fff}.red{background:#ef4444;color:#fff}.qr{display:flex;justify-content:center;margin:18px 0}.qr img{background:#fff;padding:12px;border-radius:16px;max-width:210px}@media(max-width:640px){.grid{grid-template-columns:1fr}h1{font-size:28px}}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>NEXORA TV</h1>
+    <p class="muted">Dados de acesso do cliente</p>
+    <div class="grid">
+      <div class="card"><div class="label">Cliente</div><div class="value">${escapeHtml(user.name || 'Cliente')}</div></div>
+      <div class="card"><div class="label">Status</div><div class="value">${escapeHtml(user.status || '')}</div></div>
+      <div class="card"><div class="label">Servidor</div><div class="value">api.nexoratvs.shop</div></div>
+      <div class="card"><div class="label">Usuário</div><div class="value">${escapeHtml(links.username)}</div></div>
+      <div class="card"><div class="label">Senha</div><div class="value">${escapeHtml(links.password)}</div></div>
+      <div class="card"><div class="label">Vencimento</div><div class="value">${escapeHtml(expires)}</div></div>
+    </div>
+    <div class="label">Link M3U</div>
+    <input class="link" id="m3u" readonly value="${escapeAttr(links.m3u)}" />
+    <div class="qr"><img alt="QR Code" src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(links.m3u)}" /></div>
+    <div class="buttons">
+      <button class="blue" onclick="copyText('${escapeJs(links.m3u)}')">Copiar M3U</button>
+      <button class="green" onclick="copyText('Servidor: ${escapeJs(API_PUBLIC_URL)}\\nUsuário: ${escapeJs(links.username)}\\nSenha: ${escapeJs(links.password)}')">Copiar Xtream</button>
+      <a class="btn purple" href="${escapeAttr(links.m3u)}">Abrir M3U</a>
+      <a class="btn red" href="https://wa.me/?text=${encodeURIComponent(`Nexora TV\nServidor: ${API_PUBLIC_URL}\nUsuário: ${links.username}\nSenha: ${links.password}\nM3U: ${links.m3u}`)}">Enviar WhatsApp</a>
+    </div>
+  </div>
+  <script>
+    function copyText(text){navigator.clipboard.writeText(text).then(function(){alert('Copiado!')})}
+  </script>
+</body>
+</html>`)
+  } catch (err) {
+    console.log('ERRO CLIENT PAGE:', err)
+    return res.status(500).send('erro link curto')
+  }
+})
+
+function escapeHtml(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+function escapeAttr(value = '') {
+  return escapeHtml(value).replace(/`/g, '&#096;')
+}
+
+function escapeJs(value = '') {
+  return String(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '')
+}
+
 app.get('/', (req, res) => {
   res.send('IPTV SERVER ONLINE')
 })

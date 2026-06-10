@@ -4,7 +4,8 @@ import axios from 'axios'
 const API =
   'https://api.nexoratvs.shop'
 
-function AdminUsers({
+
+const PANEL = 'https://nexoratvs.shop'function AdminUsers({
   users,
   reloadUsers
 }) {
@@ -295,6 +296,14 @@ function AdminUsers({
     return `${API}/get.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&type=m3u_plus&output=mpegts`
   }
 
+  function getShortLink(client) {
+    const username = getShortLogin(client)
+
+    if (!username) return ''
+
+    return `${PANEL}/c/${encodeURIComponent(username)}`
+  }
+
   async function saveXtreamLogin() {
     if (!editingLoginUser) return
 
@@ -366,6 +375,18 @@ Senha: ${user.password || 'senha do cliente'}
     alert('Dados Xtream copiados')
   }
 
+  function copyUserShortLink(user) {
+    const link = getShortLink(user)
+
+    if (!link) {
+      alert('Login indisponível')
+      return
+    }
+
+    navigator.clipboard.writeText(link)
+    alert('Link curto copiado')
+  }
+
   function copyUserM3U(user) {
     const link = getM3ULink(user)
 
@@ -421,6 +442,8 @@ Senha: ${createdLogin.password}
 Servidor: ${API}
 
 M3U: ${API}/get.php?username=${encodeURIComponent(shortLogin)}&password=${encodeURIComponent(createdLogin.password)}&type=m3u_plus&output=mpegts
+
+Link curto: ${PANEL}/c/${encodeURIComponent(shortLogin)}
     `)
 
     alert('Login copiado')
@@ -544,6 +567,12 @@ M3U: ${API}/get.php?username=${encodeURIComponent(shortLogin)}&password=${encode
           <input
             readOnly
             value={`M3U: ${API}/get.php?username=${encodeURIComponent(createdLogin.xtream_username || String(createdLogin.email || '').replace(/\D/g, ''))}&password=${encodeURIComponent(createdLogin.password)}&type=m3u_plus&output=mpegts`}
+            style={styles.copyInput}
+          />
+
+          <input
+            readOnly
+            value={`Link curto: ${PANEL}/c/${encodeURIComponent(createdLogin.xtream_username || String(createdLogin.email || '').replace(/\D/g, ''))}`}
             style={styles.copyInput}
           />
 
@@ -874,6 +903,13 @@ M3U: ${API}/get.php?username=${encodeURIComponent(shortLogin)}&password=${encode
                       onClick={() => copyUserM3U(user)}
                     >
                       Gerar M3U
+                    </button>
+
+                    <button
+                      style={styles.blueButton}
+                      onClick={() => copyUserShortLink(user)}
+                    >
+                      Link curto
                     </button>
                   </>
                 )}
