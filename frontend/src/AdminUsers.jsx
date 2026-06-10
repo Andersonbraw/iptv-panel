@@ -5,7 +5,9 @@ const API =
   'https://api.nexoratvs.shop'
 
 
-const PANEL = 'https://nexoratvs.shop'function AdminUsers({
+const PANEL = 'https://nexoratvs.shop'
+
+function AdminUsers({
   users,
   reloadUsers
 }) {
