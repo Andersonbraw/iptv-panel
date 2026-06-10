@@ -4972,7 +4972,26 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
           [
             item.name || 'Filme',
             item.year || '',
-            'Filmes',
+            (
+              /s\d{1,2}e\d{1,3}/i.test(item.name || '') ||
+              /\d{1,2}x\d{1,3}/i.test(item.name || '') ||
+              String(item.name || '').toLowerCase().includes('temporada') ||
+              String(item.name || '').toLowerCase().includes('episodio') ||
+              String(item.name || '').toLowerCase().includes('episódio') ||
+              String(item.name || '').toLowerCase().includes('capitulo') ||
+              String(item.name || '').toLowerCase().includes('capítulo') ||
+              String(item.category_name || '').toLowerCase().includes('series') ||
+              String(item.category_name || '').toLowerCase().includes('séries') ||
+              String(item.category_name || '').toLowerCase().includes('serie')
+            )
+              ? 'Series'
+              : cleanXtreamCategoryNameSafe(
+                  item.category_name ||
+                    item.category ||
+                    vodCategoryMap.get(String(item.category_id || '')) ||
+                    `Categoria ${item.category_id || 'Filmes'}`,
+                  'Filmes'
+                ),
             item.stream_icon || '',
             item.stream_icon || '',
             streamUrl,
@@ -5028,7 +5047,13 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
           [
             item.name || 'Série',
             item.year || '',
-            'Series',
+            cleanXtreamCategoryNameSafe(
+              item.category_name ||
+                item.category ||
+                seriesCategoryMap.get(String(item.category_id || '')) ||
+                'Series',
+              'Series'
+            ),
             item.cover || '',
             item.cover || '',
             streamUrl,
@@ -5850,6 +5875,7 @@ app.get('/player_api.php', async (req, res) => {
     }
 
     if (action === 'get_vod_categories') {
+      // Modo compatibilidade XCIPTV: uma categoria única evita categorias vazias em algumas versões do app.
       return res.json([
         {
           category_id: '1',
@@ -5916,6 +5942,13 @@ app.get('/player_api.php', async (req, res) => {
     }
 
     if (action === 'get_vod_streams') {
+      const categoryFilter = String(req.query.category_id || '').trim()
+
+      // XCIPTV usa category_id para filtrar. No modo compatibilidade, todos os filmes ficam na categoria 1.
+      if (categoryFilter && categoryFilter !== '1') {
+        return res.json([])
+      }
+
       const result = await pool.query(`
         SELECT *
         FROM movies
@@ -5937,11 +5970,11 @@ app.get('/player_api.php', async (req, res) => {
         cover: item.image || '',
         plot: item.description || '',
         category_id: '1',
-        container_extension: 'mp4',
+        container_extension: getMovieExtension(item.video),
         rating: '',
         rating_5based: 0,
         added: String(Math.floor(new Date(item.created_at || Date.now()).getTime() / 1000)),
-        direct_source: ''
+        direct_source: `${baseUrl}/movie/${encodeURIComponent(user.xtream_username || getShortLoginFromEmail(user.email) || user.email)}/${encodeURIComponent(user.password)}/${item.id}.${getMovieExtension(item.video)}`
       })))
     }
 
