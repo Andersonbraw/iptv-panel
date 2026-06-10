@@ -5837,26 +5837,19 @@ async function handleXtreamDirectStream(req, res, type) {
       return res.status(404).send('stream não encontrado')
     }
 
-    // Não deixa erro do "Assistindo agora" quebrar o play do filme/canal.
-    try {
-      if (type === 'live') {
-        await setWatchingNow(user, 'TV ao vivo', item.name || 'Canal')
-      }
-
-      if (type === 'movie') {
-        await setWatchingNow(user, 'Filme', item.title || 'Filme')
-      }
-
-      if (type === 'series') {
-        await setWatchingNow(user, 'Série', item.title || 'Série')
-      }
-    } catch (watchErr) {
-      console.log('AVISO WATCHING NOW:', watchErr.message)
+    if (type === 'live') {
+      await setWatchingNow(user, 'TV ao vivo', item.name || 'Canal')
     }
 
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Cache-Control', 'no-cache')
-    return res.redirect(302, streamUrl)
+    if (type === 'movie') {
+      await setWatchingNow(user, 'Filme', item.title || 'Filme')
+    }
+
+    if (type === 'series') {
+      await setWatchingNow(user, 'Série', item.title || 'Série')
+    }
+
+    return res.redirect(streamUrl)
   } catch (err) {
     console.log('ERRO DIRECT XTREAM STREAM:', err.message)
     return res.status(500).send('stream erro')
@@ -6186,7 +6179,7 @@ app.get('/player_api.php', async (req, res) => {
           movie_image: item.image || '',
           backdrop_path: item.banner ? [item.banner] : [],
           plot: item.description || '',
-          genre: 'Filmes',
+          genre: getVodXciptvCategoryName(item).replace(/^Filmes - /, ''),
           rating: '',
           releasedate: item.year || ''
         },
@@ -6196,7 +6189,7 @@ app.get('/player_api.php', async (req, res) => {
           title: item.title || 'Filme',
           year: item.year || '',
           added: String(now),
-          category_id: '1',
+          category_id: getVodXciptvCategoryId(item),
           container_extension: getMovieExtension(item.video),
           custom_sid: '',
           direct_source: item.video || ''
