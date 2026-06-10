@@ -701,7 +701,10 @@ function cleanXciptvCategoryText(value = '', fallback = 'Outros') {
     .replace(/Cient├[^\s|]*/gi, 'Cientifica')
     .replace(/Fam├[^\s|]*/gi, 'Familia')
     .replace(/Lan├[^\s|]*/gi, 'Lancamentos')
-    .replace(/Ô[^A-Za-z0-9]*/g, ' ')
+    .replace(/ÔÖª[^A-Za-z0-9]*/g, ' ')
+    .replace(/Ô£ö[^A-Za-z0-9]*/g, ' ')
+    .replace(/Ô¡É[^A-Za-z0-9]*/g, ' ')
+    .replace(/ÔÜö[^A-Za-z0-9]*/g, ' ')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^A-Za-z0-9\s|_-]/g, ' ')
@@ -712,6 +715,7 @@ function cleanXciptvCategoryText(value = '', fallback = 'Outros') {
   const normalized = normalizeText(raw)
 
   if (!normalized) return fallback
+  if (normalized.includes('cinema')) return 'Cinema'
   if (normalized.includes('lancamento')) return 'Lancamentos'
   if (normalized.includes('acao') || normalized.includes('action')) return 'Acao'
   if (normalized.includes('aventura') || normalized.includes('adventure')) return 'Aventura'
@@ -727,12 +731,16 @@ function cleanXciptvCategoryText(value = '', fallback = 'Outros') {
   if (normalized.includes('documentario') || normalized.includes('documentary')) return 'Documentarios'
   if (normalized.includes('nacional') || normalized.includes('brasil')) return 'Nacionais'
   if (normalized.includes('dublado')) return 'Dublados'
+  if (normalized.includes('dublagem')) return 'Dublagem Nao Oficial'
   if (normalized.includes('legendado') || normalized.includes('legendas')) return 'Legendados'
   if (normalized.includes('crime')) return 'Crime'
   if (normalized.includes('guerra')) return 'Guerra'
   if (normalized.includes('familia')) return 'Familia'
   if (normalized.includes('faroeste')) return 'Faroeste'
   if (normalized.includes('religioso')) return 'Religiosos'
+  if (normalized.includes('natal')) return 'Especial de Natal'
+  if (normalized.includes('show')) return 'Shows'
+  if (normalized.includes('oscar')) return 'Oscar 2025'
   if (normalized.includes('4k') || normalized.includes('uhd')) return 'UHD 4K'
   if (normalized.includes('marvel') || normalized.includes('ucm')) return 'Marvel UCM'
 
@@ -5068,7 +5076,7 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
               String(item.category_name || '').toLowerCase().includes('serie')
             )
               ? 'Series'
-              : cleanXtreamCategoryNameSafe(
+              : cleanXciptvCategoryText(
                   item.category_name ||
                     item.category ||
                     vodCategoryMap.get(String(item.category_id || '')) ||
