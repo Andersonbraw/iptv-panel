@@ -4972,26 +4972,7 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
           [
             item.name || 'Filme',
             item.year || '',
-            (
-              /s\d{1,2}e\d{1,3}/i.test(item.name || '') ||
-              /\d{1,2}x\d{1,3}/i.test(item.name || '') ||
-              String(item.name || '').toLowerCase().includes('temporada') ||
-              String(item.name || '').toLowerCase().includes('episodio') ||
-              String(item.name || '').toLowerCase().includes('episódio') ||
-              String(item.name || '').toLowerCase().includes('capitulo') ||
-              String(item.name || '').toLowerCase().includes('capítulo') ||
-              String(item.category_name || '').toLowerCase().includes('series') ||
-              String(item.category_name || '').toLowerCase().includes('séries') ||
-              String(item.category_name || '').toLowerCase().includes('serie')
-            )
-              ? 'Series'
-              : cleanXtreamCategoryNameSafe(
-                  item.category_name ||
-                    item.category ||
-                    vodCategoryMap.get(String(item.category_id || '')) ||
-                    `Categoria ${item.category_id || 'Filmes'}`,
-                  'Filmes'
-                ),
+            'Filmes',
             item.stream_icon || '',
             item.stream_icon || '',
             streamUrl,
@@ -5047,13 +5028,7 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
           [
             item.name || 'Série',
             item.year || '',
-            cleanXtreamCategoryNameSafe(
-              item.category_name ||
-                item.category ||
-                seriesCategoryMap.get(String(item.category_id || '')) ||
-                'Series',
-              'Series'
-            ),
+            'Series',
             item.cover || '',
             item.cover || '',
             streamUrl,
@@ -5875,22 +5850,13 @@ app.get('/player_api.php', async (req, res) => {
     }
 
     if (action === 'get_vod_categories') {
-      const result = await pool.query(`
-        SELECT *
-        FROM movies
-        WHERE
-          category <> 'Series'
-          AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
-        LIMIT 50000
-      `)
-
-      return res.json(
-        buildXtreamCategories(
-          result.rows || [],
-          detectVodCategorySafe,
-          'vod'
-        )
-      )
+      return res.json([
+        {
+          category_id: '1',
+          category_name: 'Filmes',
+          parent_id: 0
+        }
+      ])
     }
 
     if (action === 'get_series_categories') {
@@ -5957,7 +5923,7 @@ app.get('/player_api.php', async (req, res) => {
           category <> 'Series'
           AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
         ORDER BY title ASC
-        LIMIT 50000
+        LIMIT 10000
       `)
 
       return res.json((result.rows || []).map((item, index) => ({
@@ -5970,7 +5936,7 @@ app.get('/player_api.php', async (req, res) => {
         movie_image: item.image || '',
         cover: item.image || '',
         plot: item.description || '',
-        category_id: stableXtreamCategoryId('vod', detectVodCategorySafe(item)),
+        category_id: '1',
         container_extension: 'mp4',
         rating: '',
         rating_5based: 0,
