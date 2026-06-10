@@ -5816,7 +5816,7 @@ app.get('/player_api.php', async (req, res) => {
     if (action === 'get_vod_categories') {
       return res.json([
         {
-          category_id: '2000',
+          category_id: '1',
           category_name: 'Filmes',
           parent_id: 0
         }
@@ -5896,10 +5896,11 @@ app.get('/player_api.php', async (req, res) => {
         title: item.title,
         stream_type: 'movie',
         stream_id: Number(item.id),
+        stream_icon: item.image || '',
         movie_image: item.image || '',
         cover: item.image || '',
         plot: item.description || '',
-        category_id: '2000',
+        category_id: '1',
         container_extension: 'mp4',
         rating: '',
         rating_5based: 0,
