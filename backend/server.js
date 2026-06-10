@@ -519,7 +519,8 @@ function normalizeGithubUrl(url) {
 
 
 function isBlockedLiveCategory(item = {}) {
-  const name = normalizeText(item.name || item.title || '')
+  const originalName = String(item.name || item.title || '').trim()
+  const name = normalizeText(originalName)
   const category = normalizeText(item.category || '')
   const url = normalizeText(item.url || item.video || '')
   const source = `${name} ${category} ${url}`
@@ -540,6 +541,17 @@ function isBlockedLiveCategory(item = {}) {
   ]
 
   if (url.includes('/movie/') || url.includes('/series/')) return true
+
+  // Impede que VOD importado como LIVE apareça dentro de TV ao Vivo no XCIPTV.
+  // Ex.: "...E o Bravo Ficou Só (1967)", "013 - Homem-Formiga" etc.
+  const looksLikeMovieTitle =
+    /\((19|20)\d{2}\)/.test(originalName) ||
+    /\[(19|20)\d{2}\]/.test(originalName) ||
+    /^\s*\d{2,4}\s*[-.]\s*/.test(originalName) ||
+    name.includes('[l]') ||
+    name.includes('[4k]')
+
+  if (looksLikeMovieTitle) return true
 
   return blocked.some(word => source.includes(word))
 }
@@ -672,6 +684,77 @@ function buildXtreamCategories(rows, detector, prefix) {
   return Array.from(map.values()).sort((a, b) =>
     String(a.category_name).localeCompare(String(b.category_name))
   )
+}
+
+
+function cleanXciptvCategoryText(value = '', fallback = 'Outros') {
+  let raw = String(value || '').trim()
+
+  if (!raw || /^\d+$/.test(raw) || /^categoria\s+\d+$/i.test(raw)) {
+    return fallback
+  }
+
+  raw = raw
+    .replace(/A├[^\s|]*/gi, 'Acao')
+    .replace(/Com├[^\s|]*/gi, 'Comedia')
+    .replace(/Fic├[^\s|]*/gi, 'Ficcao')
+    .replace(/Cient├[^\s|]*/gi, 'Cientifica')
+    .replace(/Fam├[^\s|]*/gi, 'Familia')
+    .replace(/Lan├[^\s|]*/gi, 'Lancamentos')
+    .replace(/Ô[^A-Za-z0-9]*/g, ' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9\s|_-]/g, ' ')
+    .replace(/[|_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  const normalized = normalizeText(raw)
+
+  if (!normalized) return fallback
+  if (normalized.includes('lancamento')) return 'Lancamentos'
+  if (normalized.includes('acao') || normalized.includes('action')) return 'Acao'
+  if (normalized.includes('aventura') || normalized.includes('adventure')) return 'Aventura'
+  if (normalized.includes('comedia') || normalized.includes('comedy')) return 'Comedia'
+  if (normalized.includes('drama')) return 'Drama'
+  if (normalized.includes('terror') || normalized.includes('horror')) return 'Terror'
+  if (normalized.includes('suspense') || normalized.includes('thriller')) return 'Suspense'
+  if (normalized.includes('romance')) return 'Romance'
+  if (normalized.includes('ficcao') || normalized.includes('sci fi') || normalized.includes('scifi')) return 'Ficcao Cientifica'
+  if (normalized.includes('fantasia') || normalized.includes('fantasy')) return 'Fantasia'
+  if (normalized.includes('animacao') || normalized.includes('animation')) return 'Animacao'
+  if (normalized.includes('infantil') || normalized.includes('kids')) return 'Infantil'
+  if (normalized.includes('documentario') || normalized.includes('documentary')) return 'Documentarios'
+  if (normalized.includes('nacional') || normalized.includes('brasil')) return 'Nacionais'
+  if (normalized.includes('dublado')) return 'Dublados'
+  if (normalized.includes('legendado') || normalized.includes('legendas')) return 'Legendados'
+  if (normalized.includes('crime')) return 'Crime'
+  if (normalized.includes('guerra')) return 'Guerra'
+  if (normalized.includes('familia')) return 'Familia'
+  if (normalized.includes('faroeste')) return 'Faroeste'
+  if (normalized.includes('religioso')) return 'Religiosos'
+  if (normalized.includes('4k') || normalized.includes('uhd')) return 'UHD 4K'
+  if (normalized.includes('marvel') || normalized.includes('ucm')) return 'Marvel UCM'
+
+  return raw || fallback
+}
+
+function getVodXciptvCategoryName(item = {}) {
+  const clean = cleanXciptvCategoryText(item.category || item.category_name || '', 'Outros')
+  return clean === 'Filmes' ? 'Filmes - Outros' : `Filmes - ${clean}`
+}
+
+function getSeriesXciptvCategoryName(item = {}) {
+  const clean = cleanXciptvCategoryText(item.category || item.category_name || '', 'Series')
+  return clean === 'Series' ? 'Series - Outros' : `Series - ${clean}`
+}
+
+function getVodXciptvCategoryId(item = {}) {
+  return stableXtreamCategoryId('vod', getVodXciptvCategoryName(item))
+}
+
+function getSeriesXciptvCategoryId(item = {}) {
+  return stableXtreamCategoryId('series', getSeriesXciptvCategoryName(item))
 }
 
 
@@ -5875,24 +5958,71 @@ app.get('/player_api.php', async (req, res) => {
     }
 
     if (action === 'get_vod_categories') {
-      // Modo compatibilidade XCIPTV: uma categoria única evita categorias vazias em algumas versões do app.
-      return res.json([
-        {
-          category_id: '1',
-          category_name: 'Filmes',
-          parent_id: 0
+      const result = await pool.query(`
+        SELECT category
+        FROM movies
+        WHERE
+          category <> 'Series'
+          AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
+        GROUP BY category
+        ORDER BY category ASC
+        LIMIT 200
+      `)
+
+      const map = new Map()
+
+      for (const item of result.rows || []) {
+        const categoryName = getVodXciptvCategoryName(item)
+        const categoryId = getVodXciptvCategoryId(item)
+
+        if (!map.has(categoryId)) {
+          map.set(categoryId, {
+            category_id: categoryId,
+            category_name: categoryName,
+            parent_id: 0
+          })
         }
-      ])
+      }
+
+      return res.json(Array.from(map.values()).sort((a, b) =>
+        String(a.category_name).localeCompare(String(b.category_name))
+      ))
     }
 
     if (action === 'get_series_categories') {
-      return res.json([
-        {
-          category_id: '3000',
-          category_name: 'Séries',
-          parent_id: 0
+      const result = await pool.query(`
+        SELECT category
+        FROM movies
+        WHERE
+          category = 'Series'
+          OR LOWER(COALESCE(video, '')) LIKE '%/series/%'
+        GROUP BY category
+        ORDER BY category ASC
+        LIMIT 200
+      `)
+
+      const rows = result.rows && result.rows.length > 0
+        ? result.rows
+        : [{ category: 'Series' }]
+
+      const map = new Map()
+
+      for (const item of rows || []) {
+        const categoryName = getSeriesXciptvCategoryName(item)
+        const categoryId = getSeriesXciptvCategoryId(item)
+
+        if (!map.has(categoryId)) {
+          map.set(categoryId, {
+            category_id: categoryId,
+            category_name: categoryName,
+            parent_id: 0
+          })
         }
-      ])
+      }
+
+      return res.json(Array.from(map.values()).sort((a, b) =>
+        String(a.category_name).localeCompare(String(b.category_name))
+      ))
     }
 
     if (action === 'get_live_streams') {
@@ -5944,11 +6074,6 @@ app.get('/player_api.php', async (req, res) => {
     if (action === 'get_vod_streams') {
       const categoryFilter = String(req.query.category_id || '').trim()
 
-      // XCIPTV usa category_id para filtrar. No modo compatibilidade, todos os filmes ficam na categoria 1.
-      if (categoryFilter && categoryFilter !== '1') {
-        return res.json([])
-      }
-
       const result = await pool.query(`
         SELECT *
         FROM movies
@@ -5956,10 +6081,16 @@ app.get('/player_api.php', async (req, res) => {
           category <> 'Series'
           AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
         ORDER BY title ASC
-        LIMIT 10000
+        LIMIT 20000
       `)
 
-      return res.json((result.rows || []).map((item, index) => ({
+      let rows = result.rows || []
+
+      if (categoryFilter) {
+        rows = rows.filter(item => String(getVodXciptvCategoryId(item)) === categoryFilter)
+      }
+
+      return res.json(rows.map((item, index) => ({
         num: index + 1,
         name: item.title,
         title: item.title,
@@ -5969,7 +6100,7 @@ app.get('/player_api.php', async (req, res) => {
         movie_image: item.image || '',
         cover: item.image || '',
         plot: item.description || '',
-        category_id: '1',
+        category_id: getVodXciptvCategoryId(item),
         container_extension: getMovieExtension(item.video),
         rating: '',
         rating_5based: 0,
@@ -5979,6 +6110,8 @@ app.get('/player_api.php', async (req, res) => {
     }
 
     if (action === 'get_series') {
+      const categoryFilter = String(req.query.category_id || '').trim()
+
       const result = await pool.query(`
         SELECT *
         FROM movies
@@ -5989,7 +6122,13 @@ app.get('/player_api.php', async (req, res) => {
         LIMIT 20000
       `)
 
-      return res.json((result.rows || []).map((item, index) => ({
+      let rows = result.rows || []
+
+      if (categoryFilter) {
+        rows = rows.filter(item => String(getSeriesXciptvCategoryId(item)) === categoryFilter)
+      }
+
+      return res.json(rows.map((item, index) => ({
         num: index + 1,
         name: item.title,
         title: item.title,
@@ -5998,7 +6137,7 @@ app.get('/player_api.php', async (req, res) => {
         plot: item.description || '',
         cast: '',
         director: '',
-        genre: 'Séries',
+        genre: getSeriesXciptvCategoryName(item).replace(/^Series - /, ''),
         releaseDate: '',
         last_modified: String(Math.floor(new Date(item.created_at || Date.now()).getTime() / 1000)),
         rating: '',
@@ -6006,7 +6145,7 @@ app.get('/player_api.php', async (req, res) => {
         backdrop_path: item.banner ? [item.banner] : [],
         youtube_trailer: '',
         episode_run_time: '0',
-        category_id: '3000'
+        category_id: getSeriesXciptvCategoryId(item)
       })))
     }
 
