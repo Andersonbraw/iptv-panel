@@ -640,6 +640,30 @@ function detectSeriesCategorySafe(item = {}) {
   return base.startsWith('Séries') ? base : `Séries - ${base}`
 }
 
+
+function getImportMovieCategory(item = {}, fallback = 'Filmes') {
+  const rawCategory =
+    item.category_name ||
+    item.category ||
+    item.group ||
+    item.group_title ||
+    ''
+
+  const cleanCategory = cleanXtreamCategoryNameSafe(rawCategory, fallback)
+
+  if (
+    !rawCategory ||
+    normalizeText(cleanCategory) === 'filmes' ||
+    normalizeText(cleanCategory) === 'movies' ||
+    normalizeText(cleanCategory) === 'vod'
+  ) {
+    return fallback
+  }
+
+  return cleanCategory
+}
+
+
 function stableXtreamCategoryId(prefix, name = '') {
   const text = `${prefix}:${name}`
   let hash = 0
@@ -3968,7 +3992,7 @@ app.post('/import-m3u-file', auth, adminOnly, async (req, res) => {
               [
                 current.title,
                 '',
-                'Filmes',
+                getImportMovieCategory({ group: current.group, title: current.title }, 'Filmes'),
                 current.logo,
                 current.logo,
                 streamUrl,
@@ -4403,7 +4427,9 @@ app.post('/movies/import-m3u', auth, adminOnly, async (req, res) => {
             [
               current.title,
               '',
-              targetType,
+              targetType === 'Series'
+                ? 'Series'
+                : getImportMovieCategory({ group: current.group, title: current.title }, 'Filmes'),
               current.logo,
               current.logo,
               streamUrl,
@@ -4936,7 +4962,16 @@ app.post('/xtream/import', auth, adminOnly, async (req, res) => {
               String(item.category_name || '').toLowerCase().includes('series') ||
               String(item.category_name || '').toLowerCase().includes('séries') ||
               String(item.category_name || '').toLowerCase().includes('serie')
-            ) ? 'Series' : 'Filmes',
+            )
+              ? 'Series'
+              : getImportMovieCategory(
+                  {
+                    category_name: item.category_name,
+                    category: item.category,
+                    title: item.name
+                  },
+                  'Filmes'
+                ),
             item.stream_icon || '',
             item.stream_icon || '',
             streamUrl,
