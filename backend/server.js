@@ -5814,13 +5814,22 @@ app.get('/player_api.php', async (req, res) => {
     }
 
     if (action === 'get_vod_categories') {
-      return res.json([
-        {
-          category_id: '1',
-          category_name: 'Filmes',
-          parent_id: 0
-        }
-      ])
+      const result = await pool.query(`
+        SELECT *
+        FROM movies
+        WHERE
+          category <> 'Series'
+          AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
+        LIMIT 50000
+      `)
+
+      return res.json(
+        buildXtreamCategories(
+          result.rows || [],
+          detectVodCategorySafe,
+          'vod'
+        )
+      )
     }
 
     if (action === 'get_series_categories') {
@@ -5887,7 +5896,7 @@ app.get('/player_api.php', async (req, res) => {
           category <> 'Series'
           AND LOWER(COALESCE(video, '')) NOT LIKE '%/series/%'
         ORDER BY title ASC
-        LIMIT 20000
+        LIMIT 50000
       `)
 
       return res.json((result.rows || []).map((item, index) => ({
@@ -5900,7 +5909,7 @@ app.get('/player_api.php', async (req, res) => {
         movie_image: item.image || '',
         cover: item.image || '',
         plot: item.description || '',
-        category_id: '1',
+        category_id: stableXtreamCategoryId('vod', detectVodCategorySafe(item)),
         container_extension: 'mp4',
         rating: '',
         rating_5based: 0,
