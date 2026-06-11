@@ -748,8 +748,7 @@ function cleanXciptvCategoryText(value = '', fallback = 'Outros') {
 }
 
 function getVodXciptvCategoryName(item = {}) {
-  const clean = cleanXciptvCategoryText(item.category || item.category_name || '', 'Outros')
-  return clean === 'Filmes' ? 'Filmes - Outros' : `Filmes - ${clean}`
+  return 'Filmes - Outros'
 }
 
 function getSeriesXciptvCategoryName(item = {}) {
@@ -758,7 +757,7 @@ function getSeriesXciptvCategoryName(item = {}) {
 }
 
 function getVodXciptvCategoryId(item = {}) {
-  return stableXtreamCategoryId('vod', getVodXciptvCategoryName(item))
+  return '2500'
 }
 
 function getSeriesXciptvCategoryId(item = {}) {
